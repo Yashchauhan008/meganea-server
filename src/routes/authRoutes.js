@@ -1,10 +1,11 @@
-const express = require('express');
-const router = express.Router();
-const { registerUser, loginUser, getMe } = require('../controllers/authController');
-const { protect } = require('../middlewares/authMiddleware');
+import express from 'express';
+import { loginUser, registerUser, getMe } from '../controllers/authController.js';
+import { protect } from '../middleware/authMiddleware.js';
 
-router.post('/register', registerUser);
+const router = express.Router();
+
+router.post('/register', registerUser); // Should be a protected, admin-only route in a real app
 router.post('/login', loginUser);
 router.get('/me', protect, getMe);
 
-module.exports = router;
+export default router;

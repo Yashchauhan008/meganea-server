@@ -1,27 +1,25 @@
-const asyncHandler = require('express-async-handler');
-const Tile = require('../models/Tile');
-const { generateUniqueId } = require('../utils/generateId');
+import Tile from '../models/tileModel.js';
+import asyncHandler from '../utils/asyncHandler.js';
+import { generateId } from '../services/idGenerator.js';
 
 // @desc    Create a new tile
 // @route   POST /api/tiles
-// @access  Private/Admin
-const createTile = asyncHandler(async (req, res) => {
-  const { name, number, surface, size } = req.body;
-  
-  if (!req.file) {
-    res.status(400);
-    throw new Error('Image file is required');
-  }
+// @access  Private/Admin, Private/Staff
+export const createTile = asyncHandler(async (req, res) => {
+  const { name, number, surface, size, imageUrl, conversionFactor, restockThreshold, stockDetails } = req.body;
 
-  const tileId = `TILE-${Date.now()}`; // Simple unique ID
-  
+  const tileId = await generateId('TL');
+
   const tile = await Tile.create({
     tileId,
     name,
     number,
     surface,
     size,
-    imageUrl: req.file.path,
+    imageUrl,
+    conversionFactor,
+    restockThreshold,
+    stockDetails,
   });
 
   res.status(201).json(tile);
@@ -29,16 +27,16 @@ const createTile = asyncHandler(async (req, res) => {
 
 // @desc    Get all tiles
 // @route   GET /api/tiles
-// @access  Private
-const getAllTiles = asyncHandler(async (req, res) => {
+// @access  Public
+export const getAllTiles = asyncHandler(async (req, res) => {
   const tiles = await Tile.find({ isActive: true });
   res.status(200).json(tiles);
 });
 
 // @desc    Get a single tile by ID
 // @route   GET /api/tiles/:id
-// @access  Private
-const getTileById = asyncHandler(async (req, res) => {
+// @access  Public
+export const getTileById = asyncHandler(async (req, res) => {
   const tile = await Tile.findById(req.params.id);
   if (!tile) {
     res.status(404);
@@ -49,9 +47,25 @@ const getTileById = asyncHandler(async (req, res) => {
 
 // @desc    Update a tile
 // @route   PUT /api/tiles/:id
+// @access  Private/Admin, Private/Staff
+export const updateTile = asyncHandler(async (req, res) => {
+  const tile = await Tile.findByIdAndUpdate(req.params.id, req.body, {
+    new: true,
+    runValidators: true,
+  });
+
+  if (!tile) {
+    res.status(404);
+    throw new Error('Tile not found');
+  }
+
+  res.status(200).json(tile);
+});
+
+// @desc    Delete a tile (soft delete)
+// @route   DELETE /api/tiles/:id
 // @access  Private/Admin
-const updateTile = asyncHandler(async (req, res) => {
-  const { name, number, surface, size, isActive } = req.body;
+export const deleteTile = asyncHandler(async (req, res) => {
   const tile = await Tile.findById(req.params.id);
 
   if (!tile) {
@@ -59,18 +73,9 @@ const updateTile = asyncHandler(async (req, res) => {
     throw new Error('Tile not found');
   }
 
-  tile.name = name || tile.name;
-  tile.number = number || tile.number;
-  tile.surface = surface || tile.surface;
-  tile.size = size || tile.size;
-  tile.isActive = isActive !== undefined ? isActive : tile.isActive;
+  // Soft delete by setting isActive to false
+  tile.isActive = false;
+  await tile.save();
 
-  if (req.file) {
-    tile.imageUrl = req.file.path;
-  }
-
-  const updatedTile = await tile.save();
-  res.status(200).json(updatedTile);
+  res.status(200).json({ message: 'Tile deactivated successfully' });
 });
-
-module.exports = { createTile, getAllTiles, getTileById, updateTile };

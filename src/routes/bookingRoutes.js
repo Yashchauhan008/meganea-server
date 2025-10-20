@@ -1,14 +1,30 @@
-const express = require('express');
+import express from 'express';
+import {
+  createBooking,
+  getAllBookings,
+  getBookingById,
+  updateBookingStatus,
+  addUnprocessedImage,
+  cancelBooking,
+} from '../controllers/bookingController.js';
+import { protect, authorize } from '../middleware/authMiddleware.js';
+import upload from '../config/cloudinary.js';
+
 const router = express.Router();
-const { createBooking, fulfillBooking, cancelBooking, getAllBookings } = require('../controllers/bookingController');
-const { protect } = require('../middlewares/authMiddleware');
-const { role, location } = require('../middlewares/roleMiddleware');
 
-router.route('/')
-  .post(protect, role('admin', 'dubai-staff'), location('Dubai'), createBooking)
-  .get(protect, getAllBookings);
+router.use(protect, authorize('admin', 'dubai-staff', 'salesman'));
 
-router.put('/:id/fulfill', protect, role('admin', 'dubai-staff'), location('Dubai'), fulfillBooking);
-router.put('/:id/cancel', protect, role('admin', 'dubai-staff'), cancelBooking);
+router.route('/').post(createBooking).get(getAllBookings);
+router.route('/:id').get(getBookingById);
+router.route('/:id/cancel').patch(cancelBooking);
+router.route('/:id/status').patch(updateBookingStatus); // Admin/staff can manually override status
 
-module.exports = router;
+// Route for laborers to upload delivery note images
+router.post(
+  '/:id/upload-image',
+  authorize('admin', 'dubai-staff', 'labor'),
+  upload.single('image'),
+  addUnprocessedImage
+);
+
+export default router;

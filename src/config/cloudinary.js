@@ -1,6 +1,9 @@
-const cloudinary = require('cloudinary').v2;
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
-const multer = require('multer');
+import { v2 as cloudinary } from 'cloudinary';
+import { CloudinaryStorage } from 'multer-storage-cloudinary';
+import multer from 'multer';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -11,12 +14,12 @@ cloudinary.config({
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
-    folder: 'tiles_inventory',
-    format: async (req, file) => 'png', // supports promises as well
-    public_id: (req, file) => `${file.fieldname}-${Date.now()}`,
+    folder: 'inventory_delivery_notes',
+    format: async (req, file) => 'jpg', // supports promises as well
+    public_id: (req, file) => `delivery-note-${Date.now()}`,
   },
 });
 
 const upload = multer({ storage: storage });
 
-module.exports = { cloudinary, upload };
+export default upload;

@@ -1,24 +1,34 @@
-const asyncHandler = require('express-async-handler');
-const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+import User from '../models/userModel.js';
+import asyncHandler from '../utils/asyncHandler.js';
+import jwt from 'jsonwebtoken';
 
+// Generate JWT
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+  return jwt.sign({ id }, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN,
+  });
 };
 
-// @desc    Register a new user
+// @desc    Register a new user (for setup, should be admin-only)
 // @route   POST /api/auth/register
-// @access  Public (or Admin only in production)
-const registerUser = asyncHandler(async (req, res) => {
+// @access  Public (for now, should be Private/Admin)
+export const registerUser = asyncHandler(async (req, res) => {
   const { username, email, password, role, location } = req.body;
 
   const userExists = await User.findOne({ email });
+
   if (userExists) {
     res.status(400);
     throw new Error('User already exists');
   }
 
-  const user = await User.create({ username, email, password, role, location });
+  const user = await User.create({
+    username,
+    email,
+    password,
+    role,
+    location,
+  });
 
   if (user) {
     res.status(201).json({
@@ -26,7 +36,6 @@ const registerUser = asyncHandler(async (req, res) => {
       username: user.username,
       email: user.email,
       role: user.role,
-      location: user.location,
       token: generateToken(user._id),
     });
   } else {
@@ -35,14 +44,21 @@ const registerUser = asyncHandler(async (req, res) => {
   }
 });
 
-// @desc    Auth user & get token
+// @desc    Authenticate user & get token
 // @route   POST /api/auth/login
 // @access  Public
-const loginUser = asyncHandler(async (req, res) => {
+export const loginUser = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
-  const user = await User.findOne({ email });
+
+  if (!email || !password) {
+    res.status(400);
+    throw new Error('Please provide email and password');
+  }
+
+  const user = await User.findOne({ email }).select('+password');
 
   if (user && (await user.matchPassword(password))) {
+    // Update last login
     user.lastLogin = Date.now();
     await user.save();
 
@@ -51,7 +67,6 @@ const loginUser = asyncHandler(async (req, res) => {
       username: user.username,
       email: user.email,
       role: user.role,
-      location: user.location,
       token: generateToken(user._id),
     });
   } else {
@@ -61,10 +76,9 @@ const loginUser = asyncHandler(async (req, res) => {
 });
 
 // @desc    Get current user profile
-// @route   GET /api/users/me
+// @route   GET /api/auth/me
 // @access  Private
-const getMe = asyncHandler(async (req, res) => {
+export const getMe = asyncHandler(async (req, res) => {
+  // req.user is attached by the 'protect' middleware
   res.status(200).json(req.user);
 });
-
-module.exports = { registerUser, loginUser, getMe };

@@ -1,36 +1,30 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const arrivalHistorySchema = new mongoose.Schema({
-  containerId: { type: String, required: true },
   quantity: { type: Number, required: true },
   arrivalDate: { type: Date, default: Date.now },
+  notes: { type: String },
 });
 
 const requestedItemSchema = new mongoose.Schema({
   tile: { type: mongoose.Schema.Types.ObjectId, ref: 'Tile', required: true },
-  quantity: { type: Number, required: true },
-  status: {
-    type: String,
-    enum: ['Pending', 'Ordered', 'In Transit', 'Arrived'],
-    default: 'Pending',
-  },
+  quantityRequested: { type: Number, required: true },
+  quantityArrived: { type: Number, default: 0 },
   arrivalHistory: [arrivalHistorySchema],
 });
 
 const restockRequestSchema = new mongoose.Schema({
-  requestId: { type: String, required: true, unique: true, index: true },
+  requestId: { type: String, required: true, unique: true },
   status: {
     type: String,
     enum: ['Pending', 'Processing', 'Partially Arrived', 'Completed', 'Cancelled'],
     default: 'Pending',
-    index: true,
   },
   requestedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  requestedAt: { type: Date, default: Date.now, index: true },
+  requestedItems: [requestedItemSchema],
   notes: { type: String },
   completedAt: { type: Date },
-  requestedItems: [requestedItemSchema],
 }, { timestamps: true });
 
 const RestockRequest = mongoose.model('RestockRequest', restockRequestSchema);
-module.exports = RestockRequest;
+export default RestockRequest;

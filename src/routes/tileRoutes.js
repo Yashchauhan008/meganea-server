@@ -1,16 +1,23 @@
-const express = require('express');
+import express from 'express';
+import {
+  createTile,
+  getAllTiles,
+  getTileById,
+  updateTile,
+  deleteTile,
+} from '../controllers/tileController.js';
+import { protect, authorize } from '../middleware/authMiddleware.js';
+
 const router = express.Router();
-const { createTile, getAllTiles, getTileById, updateTile } = require('../controllers/tileController');
-const { protect } = require('../middlewares/authMiddleware');
-const { role } = require('../middlewares/roleMiddleware');
-const { upload } = require('../config/cloudinary');
 
-router.route('/')
-  .post(protect, role('admin'), upload.single('image'), createTile)
-  .get(protect, getAllTiles);
+// Publicly viewable tiles
+router.route('/').get(getAllTiles);
+router.route('/:id').get(getTileById);
 
-router.route('/:id')
-  .get(protect, getTileById)
-  .put(protect, role('admin'), upload.single('image'), updateTile);
+// Protected routes for staff and admin
+router.use(protect, authorize('admin', 'dubai-staff', 'india-staff'));
 
-module.exports = router;
+router.route('/').post(createTile);
+router.route('/:id').put(updateTile).delete(authorize('admin'), deleteTile); // Only admin can delete
+
+export default router;

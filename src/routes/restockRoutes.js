@@ -1,13 +1,28 @@
-const express = require('express');
+import express from 'express';
+import {
+  createRestockRequest,
+  getAllRestockRequests,
+  getRestockRequestById,
+  updateRestockRequestStatus,
+  recordArrival,
+} from '../controllers/restockController.js';
+import { protect, authorize } from '../middleware/authMiddleware.js';
+
 const router = express.Router();
-const { createRestockRequest, recordContainerArrival, getAllRestockRequests } = require('../controllers/restockController');
-const { protect } = require('../middlewares/authMiddleware');
-const { role, location } = require('../middlewares/roleMiddleware');
+
+// Dubai staff can create and view requests
+router.use(protect, authorize('admin', 'dubai-staff', 'india-staff'));
 
 router.route('/')
-  .post(protect, role('admin', 'dubai-staff'), location('Dubai'), createRestockRequest)
-  .get(protect, getAllRestockRequests);
+  .post(authorize('admin', 'dubai-staff'), createRestockRequest)
+  .get(getAllRestockRequests);
 
-router.put('/:id/arrival', protect, role('admin', 'dubai-staff'), location('Dubai'), recordContainerArrival);
+router.route('/:id').get(getRestockRequestById);
 
-module.exports = router;
+// India staff can process requests
+router.patch('/:id/status', authorize('admin', 'india-staff'), updateRestockRequestStatus);
+
+// Dubai staff can record arrivals
+router.post('/:id/record-arrival', authorize('admin', 'dubai-staff'), recordArrival);
+
+export default router;
