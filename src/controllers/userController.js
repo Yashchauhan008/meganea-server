@@ -78,21 +78,24 @@ export const updateUser = asyncHandler(async (req, res) => {
 // @desc    Delete user
 // @route   DELETE /api/users/:id
 // @access  Private/Admin
+// @desc    Delete user (soft delete)
+// @route   DELETE /api/users/:id
+// @access  Private/Admin
 export const deleteUser = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.params.id);
-
-  if (!user) {
-    res.status(404);
-    throw new Error('User not found');
-  }
-
-  // Add logic here to re-assign parties if the user is a salesman
-  if (user.role === 'salesman') {
-    // Example: await Party.updateMany({ salesman: user._id }, { $set: { salesman: null } });
-    // This is a critical business logic step you must define.
-  }
-
-  await user.deleteOne();
-
-  res.status(200).json({ message: 'User removed successfully' });
-});
+    // UPDATED: Use the new archive static method
+    const user = await User.archive(req.params.id);
+  
+    if (!user) {
+      res.status(404);
+      throw new Error('User not found');
+    }
+  
+    // Optional: Add logic here to re-assign parties if the user is a salesman
+    if (user.role === 'salesman') {
+      // Example: await Party.updateMany({ salesman: user._id }, { $set: { salesman: null } });
+      // This is a critical business logic step you must define.
+    }
+  
+    res.status(200).json({ message: 'User archived successfully' });
+  });
+  
