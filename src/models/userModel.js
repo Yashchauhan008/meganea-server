@@ -43,7 +43,7 @@ const userSchema = new mongoose.Schema({
   role: {
     type: String,
     required: true,
-    enum: ['admin', 'dubai-staff', 'india-staff', 'salesman', 'labor'],
+    enum: ['admin', 'dubai-staff', 'india-staff', 'salesman', 'labor', 'accountant'],
   },
   location: { type: String, enum: ['Dubai', 'India'] },
   isActive: { type: Boolean, default: true },

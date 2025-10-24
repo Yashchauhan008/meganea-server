@@ -20,20 +20,20 @@
 import mongoose from 'mongoose';
 
 const partySchema = new mongoose.Schema({
-  partyId: { type: String, required: true, unique: true, trim: true },
-  partyName: { type: String, required: true },
-  contactPerson: { type: String },
-  contactNumber: { type: String, required: true },
-  email: { type: String, lowercase: true, trim: true },
-  address: { type: String },
-  salesman: {
-    type: mongoose.Schema.Types.ObjectId,
-    required: true,
-    ref: 'User',
-  },
-  // ADDED: Soft delete field
-  deleted: { type: Boolean, default: false, select: false },
-}, { timestamps: true });
+    partyId: { type: String, required: true, unique: true, trim: true },
+    partyName: { type: String, required: true }, // Required
+    contactPerson: { type: String }, // Optional
+    contactNumber: { type: String }, // Optional
+    email: { type: String, lowercase: true, trim: true }, // Optional
+    address: { type: String }, // Optional
+    salesman: { // Required
+      type: mongoose.Schema.Types.ObjectId,
+      required: true,
+      ref: 'User',
+    },
+    deleted: { type: Boolean, default: false, select: false },
+  }, { timestamps: true });
+  
 
 // Exclude soft-deleted documents from all find queries
 partySchema.pre(/^find/, function (next) {

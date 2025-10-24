@@ -9,11 +9,18 @@ import { generateId } from '../services/idGenerator.js';
 export const createParty = asyncHandler(async (req, res) => {
   const { partyName, contactPerson, contactNumber, email, address, salesman } = req.body;
 
-  // Ensure salesman exists and has the correct role
-  const salesmanUser = await User.findById(salesman);
+  // A user can assign themselves if they are a salesman, or an admin/staff can assign any salesman
+  const salesmanToAssign = req.user.role === 'salesman' ? req.user._id : salesman;
+
+  if (!salesmanToAssign) {
+    res.status(400);
+    throw new Error('A salesman must be assigned to the party.');
+  }
+
+  const salesmanUser = await User.findById(salesmanToAssign);
   if (!salesmanUser || salesmanUser.role !== 'salesman') {
     res.status(400);
-    throw new Error('Invalid salesman ID or user is not a salesman');
+    throw new Error('Invalid salesman ID or the assigned user is not a salesman.');
   }
 
   const partyId = await generateId('PT');
@@ -25,7 +32,7 @@ export const createParty = asyncHandler(async (req, res) => {
     contactNumber,
     email,
     address,
-    salesman,
+    salesman: salesmanToAssign,
   });
 
   res.status(201).json(party);
@@ -46,7 +53,7 @@ export const getAllParties = asyncHandler(async (req, res) => {
 
 // @desc    Get a single party by ID
 // @route   GET /api/parties/:id
-// @access  Private/Admin, Private/Dubai-Staff, Private/Salesman
+// @access  Private
 export const getPartyById = asyncHandler(async (req, res) => {
   const party = await Party.findById(req.params.id).populate('salesman', 'username email');
 
@@ -55,7 +62,7 @@ export const getPartyById = asyncHandler(async (req, res) => {
     throw new Error('Party not found');
   }
 
-  // Salesman can only access their own party
+  // A salesman can only access their own party
   if (req.user.role === 'salesman' && party.salesman._id.toString() !== req.user._id.toString()) {
     res.status(403);
     throw new Error('User not authorized to view this party');
@@ -66,7 +73,7 @@ export const getPartyById = asyncHandler(async (req, res) => {
 
 // @desc    Update a party
 // @route   PUT /api/parties/:id
-// @access  Private/Admin, Private/Dubai-Staff, Private/Salesman
+// @access  Private
 export const updateParty = asyncHandler(async (req, res) => {
   const party = await Party.findById(req.params.id);
 
@@ -75,7 +82,7 @@ export const updateParty = asyncHandler(async (req, res) => {
     throw new Error('Party not found');
   }
 
-  // Salesman can only update their own party
+  // A salesman can only update their own party
   if (req.user.role === 'salesman' && party.salesman.toString() !== req.user._id.toString()) {
     res.status(403);
     throw new Error('User not authorized to update this party');
@@ -89,18 +96,24 @@ export const updateParty = asyncHandler(async (req, res) => {
   res.status(200).json(updatedParty);
 });
 
-// @desc    Delete a party
+// @desc    Delete a party (soft delete)
 // @route   DELETE /api/parties/:id
 // @access  Private/Admin
 export const deleteParty = asyncHandler(async (req, res) => {
-  const party = await Party.findById(req.params.id);
+  const party = await Party.archive(req.params.id);
 
   if (!party) {
     res.status(404);
     throw new Error('Party not found');
   }
 
-  await party.deleteOne();
+  res.status(200).json({ message: 'Party archived successfully' });
+});
 
-  res.status(200).json({ message: 'Party removed successfully' });
+// @desc    Get all salesmen to populate dropdown
+// @route   GET /api/users/salesmen
+// @access  Private
+export const getSalesmen = asyncHandler(async (req, res) => {
+    const salesmen = await User.find({ role: 'salesman', isActive: true });
+    res.status(200).json(salesmen);
 });
