@@ -19,16 +19,32 @@ const generateId = async (prefix) => {
     default: throw new Error('Invalid prefix for ID generation');
   }
 
-  const lastDocument = await model.findOne({}, {}, { sort: { 'createdAt': -1 } });
+  // --- THIS IS THE CORRECTED LOGIC ---
+  // We use .unscoped() if you have a default scope, or add a condition to find all documents.
+  // A more direct way is to bypass the middleware for this specific query.
+  // Mongoose middleware does not apply to aggregation pipelines, so we can use one.
+  
+  const lastDocuments = await model.aggregate([
+    { $sort: { createdAt: -1 } }, // Sort by creation date descending
+    { $limit: 1 }, // Take only the most recent one
+    { $project: { [idFieldName]: 1 } } // Project only the ID field we need
+  ]);
+
   let sequenceNumber = 1;
 
-  if (lastDocument && lastDocument[idFieldName]) {
-    const lastId = lastDocument[idFieldName];
-    if (lastId.startsWith(prefix)) {
-      const lastNumber = parseInt(lastId.split('-')[1], 10);
-      sequenceNumber = lastNumber + 1;
+  if (lastDocuments.length > 0) {
+    const lastDocument = lastDocuments[0];
+    if (lastDocument && lastDocument[idFieldName]) {
+      const lastId = lastDocument[idFieldName];
+      if (lastId.startsWith(prefix)) {
+        const lastNumber = parseInt(lastId.split('-')[1], 10);
+        if (!isNaN(lastNumber)) {
+          sequenceNumber = lastNumber + 1;
+        }
+      }
     }
   }
+  // ------------------------------------
 
   return `${prefix}-${String(sequenceNumber).padStart(5, '0')}`;
 };
