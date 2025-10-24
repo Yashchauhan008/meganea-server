@@ -10,14 +10,13 @@ import { protect, authorize } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// Publicly viewable tiles
-router.route('/').get(getAllTiles);
-router.route('/:id').get(getTileById);
+router.get('/', getAllTiles);
+router.get('/:id', getTileById);
 
-// Protected routes for staff and admin
-router.use(protect, authorize('admin', 'dubai-staff', 'india-staff'));
+router.use(protect);
 
-router.route('/').post(createTile);
-router.route('/:id').put(updateTile).delete(authorize('admin'), deleteTile); // Only admin can delete
+router.post('/', authorize('admin', 'dubai-staff', 'india-staff'), createTile);
+router.put('/:id', authorize('admin', 'dubai-staff', 'india-staff'), updateTile);
+router.delete('/:id', authorize('admin'), deleteTile);
 
 export default router;

@@ -1,48 +1,135 @@
+// import mongoose from 'mongoose';
+
+// const tileSchema = new mongoose.Schema({
+//   tileId: { 
+//     type: String, 
+//     required: true, 
+//     unique: true, 
+//     trim: true 
+//   },
+//   name: { 
+//     type: String, 
+//     required: true,
+//     unique: true 
+//   },
+//   number: { 
+//     type: String,
+//     unique: true,
+//     sparse: true, // Allows multiple tiles to have no number, but any number that is set must be unique.
+//   },
+//   surface: { 
+//     type: String, 
+//     required: true,
+//     enum: ['Glossy', 'Matt']
+//   },
+//   size: { type: String, required: true },
+//   imageUrl: { type: String },
+//   publicId: { type: String },
+//   conversionFactor: { type: Number, required: true, default: 1 },
+//   restockThreshold: { type: Number, default: 0, min: 0 },
+  
+//   // --- THIS IS THE CORRECT AND FINAL SCHEMA FOR STOCK ---
+//   stockDetails: {
+//     availableStock: { type: Number, default: 0, min: 0 }, // Static, independent field
+//     bookedStock: { type: Number, default: 0, min: 0 },    // Static, independent field
+//     restockingStock: { type: Number, default: 0, min: 0 },// Static, independent field
+//   },
+//   // ------------------------------------------------------
+
+//   isActive: { type: Boolean, default: true },
+//   createdBy: { 
+//     type: mongoose.Schema.Types.ObjectId, 
+//     ref: 'User', 
+//     required: true 
+//   },
+//   deleted: { type: Boolean, default: false, select: false },
+// }, { timestamps: true });
+
+// // --- The virtual property has been REMOVED. This is crucial. ---
+
+// // Soft Delete Static Method
+// tileSchema.statics.archive = async function(id) {
+//     const doc = await this.findById(id);
+//     if (doc) {
+//         doc.deleted = true;
+//         await doc.save();
+//     }
+//     return doc;
+// };
+
+// // Middleware to exclude deleted documents from queries
+// tileSchema.pre('find', function() {
+//   this.where({ deleted: { $ne: true } });
+// });
+
+// tileSchema.pre('findOne', function() {
+//   this.where({ deleted: { $ne: true } });
+// });
+
+// const Tile = mongoose.model('Tile', tileSchema);
+// export default Tile;
+
 import mongoose from 'mongoose';
 
 const tileSchema = new mongoose.Schema({
-  tileId: { type: String, required: true, unique: true, trim: true },
-  name: { type: String, required: true },
-  number: { type: String },
-  surface: { type: String, required: true },
+  tileId: { 
+    type: String, 
+    required: true, 
+    unique: true, 
+    trim: true 
+  },
+  name: { 
+    type: String, 
+    required: true,
+    unique: true 
+  },
+  number: { 
+    type: String,
+    unique: true,
+    sparse: true,
+  },
+  surface: { 
+    type: String, 
+    required: true,
+    enum: ['Glossy', 'Matt']
+  },
   size: { type: String, required: true },
   imageUrl: { type: String },
+  publicId: { type: String },
   conversionFactor: { type: Number, required: true, default: 1 },
   restockThreshold: { type: Number, default: 0, min: 0 },
+  
   stockDetails: {
-    currentStock: { type: Number, default: 0, min: 0 },
+    availableStock: { type: Number, default: 0, min: 0 },
     bookedStock: { type: Number, default: 0, min: 0 },
     restockingStock: { type: Number, default: 0, min: 0 },
   },
+
   isActive: { type: Boolean, default: true },
-  // ADDED: Soft delete field
+  createdBy: { 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'User', 
+    required: true 
+  },
   deleted: { type: Boolean, default: false, select: false },
-}, { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } });
+}, { timestamps: true });
 
-// --- VIRTUALS & MIDDLEWARE ---
-
-tileSchema.virtual('availableStock').get(function() {
-  return this.stockDetails.currentStock - this.stockDetails.bookedStock;
-});
-
-// Exclude soft-deleted documents from all find queries
-tileSchema.pre(/^find/, function (next) {
-  this.where({ deleted: { $ne: true } });
-  next();
-});
-
-// Static method to soft delete a tile
-tileSchema.statics.archive = async function (id) {
-  const tile = await this.findById(id);
-  if (tile) {
-    // Instead of deleting, we set the 'deleted' flag.
-    // We also set isActive to false as a secondary measure.
-    tile.deleted = true;
-    tile.isActive = false; 
-    await tile.save();
-  }
-  return tile;
+tileSchema.statics.archive = async function(id) {
+    const doc = await this.findById(id);
+    if (doc) {
+        doc.deleted = true;
+        await doc.save();
+    }
+    return doc;
 };
+
+tileSchema.pre('find', function() {
+  this.where({ deleted: { $ne: true } });
+});
+
+tileSchema.pre('findOne', function() {
+  this.where({ deleted: { $ne: true } });
+});
 
 const Tile = mongoose.model('Tile', tileSchema);
 export default Tile;
