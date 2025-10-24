@@ -4,19 +4,21 @@ import {
   getAllTiles,
   getTileById,
   updateTile,
-  deleteTile,
+  deleteTile // This is the soft delete
 } from '../controllers/tileController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-router.get('/', getAllTiles);
-router.get('/:id', getTileById);
+// The GET route is public to see active tiles
+router.route('/')
+  .get(getAllTiles)
+  .post(protect, authorize('admin', 'dubai-staff', 'india-staff'), createTile);
 
-router.use(protect);
-
-router.post('/', authorize('admin', 'dubai-staff', 'india-staff'), createTile);
-router.put('/:id', authorize('admin', 'dubai-staff', 'india-staff'), updateTile);
-router.delete('/:id', authorize('admin'), deleteTile);
+// All actions on a specific tile ID
+router.route('/:id')
+  .get(getTileById) // Public
+  .put(protect, authorize('admin', 'dubai-staff', 'india-staff'), updateTile)
+  .delete(protect, authorize('admin', 'dubai-staff'), deleteTile); // This performs the soft delete
 
 export default router;
