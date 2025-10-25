@@ -10,7 +10,7 @@
 // const bookingSchema = new mongoose.Schema({
 //   bookingId: { type: String, required: true, unique: true },
 //   bookingType: { type: String, enum: ['Standard', 'Emergency'], default: 'Standard' },
-//   party: { type: mongoose.Schema.Types.ObjectId, ref: 'Party' },
+//   company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company' },
 //   salesman: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 //   lpoNumber: { type: String },
 //   tilesList: [{
@@ -44,7 +44,7 @@ const unprocessedImageSchema = new mongoose.Schema({
 const bookingSchema = new mongoose.Schema({
   bookingId: { type: String, required: true, unique: true },
   bookingType: { type: String, enum: ['Standard', 'Emergency'], default: 'Standard' },
-  party: { type: mongoose.Schema.Types.ObjectId, ref: 'Party' },
+  company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company' },
   salesman: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   lpoNumber: { type: String },
   tilesList: [{

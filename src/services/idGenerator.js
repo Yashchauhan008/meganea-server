@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import Booking from '../models/bookingModel.js';
 import DispatchOrder from '../models/dispatchOrderModel.js';
-import Party from '../models/partyModel.js';
+import Company from '../models/companyModel.js';
 import RestockRequest from '../models/restockRequestModel.js';
 import Tile from '../models/tileModel.js';
 
@@ -13,7 +13,7 @@ const generateId = async (prefix) => {
   switch (prefix) {
     case 'BK': model = Booking; modelName = 'Booking'; idFieldName = 'bookingId'; break;
     case 'DO': model = DispatchOrder; modelName = 'DispatchOrder'; idFieldName = 'dispatchNumber'; break;
-    case 'PT': model = Party; modelName = 'Party'; idFieldName = 'partyId'; break;
+    case 'PT': model = Company; modelName = 'Company'; idFieldName = 'companyId'; break;
     case 'RQ': model = RestockRequest; modelName = 'RestockRequest'; idFieldName = 'requestId'; break;
     case 'TL': model = Tile; modelName = 'Tile'; idFieldName = 'tileId'; break;
     default: throw new Error('Invalid prefix for ID generation');

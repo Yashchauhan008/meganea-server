@@ -132,7 +132,7 @@
 // // @access  Private/Admin, Private/Dubai-Staff
 // export const getDispatchOrderById = asyncHandler(async (req, res) => {
 //   const order = await DispatchOrder.findById(req.params.id)
-//     .populate('booking', 'bookingId party')
+//     .populate('booking', 'bookingId company')
 //     .populate('salesman', 'username')
 //     .populate('dispatchedItems.tile', 'name tileId');
 
@@ -540,9 +540,9 @@ export const getAllDispatchOrders = asyncHandler(async (req, res) => {
   const orders = await DispatchOrder.find({})
     .populate({
         path: 'booking',
-        select: 'bookingId party dispatchOrders', // Ensure dispatchOrders is included for the edit logic
+        select: 'bookingId company dispatchOrders', // Ensure dispatchOrders is included for the edit logic
         populate: [
-            { path: 'party', select: 'partyName' },
+            { path: 'company', select: 'companyName' },
             { 
                 path: 'dispatchOrders', // Deeply populate for the edit context calculation
                 populate: { path: 'dispatchedItems.tile', select: 'name' }

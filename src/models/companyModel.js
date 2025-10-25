@@ -1,8 +1,8 @@
 // import mongoose from 'mongoose';
 
-// const partySchema = new mongoose.Schema({
-//     partyId: { type: String, required: true, unique: true, trim: true },
-//     partyName: { type: String, required: true }, // Required
+// const companySchema = new mongoose.Schema({
+//     companyId: { type: String, required: true, unique: true, trim: true },
+//     companyName: { type: String, required: true }, // Required
 //     contactPerson: { type: String }, // Optional
 //     contactNumber: { type: String }, // Optional
 //     email: { type: String, lowercase: true, trim: true }, // Optional
@@ -17,30 +17,30 @@
   
 
 // // Exclude soft-deleted documents from all find queries
-// partySchema.pre(/^find/, function (next) {
+// companySchema.pre(/^find/, function (next) {
 //   this.where({ deleted: { $ne: true } });
 //   next();
 // });
 
-// // Static method to soft delete a party
-// partySchema.statics.archive = async function (id) {
-//   const party = await this.findById(id);
-//   if (party) {
-//     party.deleted = true;
-//     await party.save();
+// // Static method to soft delete a company
+// companySchema.statics.archive = async function (id) {
+//   const company = await this.findById(id);
+//   if (company) {
+//     company.deleted = true;
+//     await company.save();
 //   }
-//   return party;
+//   return company;
 // };
 
-// const Party = mongoose.model('Party', partySchema);
-// export default Party;
+// const Company = mongoose.model('Company', companySchema);
+// export default Company;
 
 
 import mongoose from 'mongoose';
 
-const partySchema = new mongoose.Schema({
-  partyId: { type: String, required: true, unique: true, trim: true },
-  partyName: { 
+const companySchema = new mongoose.Schema({
+  companyId: { type: String, required: true, unique: true, trim: true },
+  companyName: { 
     type: String, 
     required: true,
     unique: true // This creates the unique index.
@@ -58,12 +58,12 @@ const partySchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Middleware to exclude soft-deleted documents from normal queries
-partySchema.pre('find', function() {
+companySchema.pre('find', function() {
   this.where({ deleted: { $ne: true } });
 });
-partySchema.pre('findOne', function() {
+companySchema.pre('findOne', function() {
   this.where({ deleted: { $ne: true } });
 });
 
-const Party = mongoose.model('Party', partySchema);
-export default Party;
+const Company = mongoose.model('Company', companySchema);
+export default Company;

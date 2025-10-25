@@ -9,7 +9,7 @@
 // import authRoutes from './routes/authRoutes.js';
 // import userRoutes from './routes/userRoutes.js';
 // import tileRoutes from './routes/tileRoutes.js';
-// import partyRoutes from './routes/partyRoutes.js';
+// import companyRoutes from './routes/companyRoutes.js';
 // import bookingRoutes from './routes/bookingRoutes.js';
 // import dispatchRoutes from './routes/dispatchRoutes.js';
 // import restockRoutes from './routes/restockRoutes.js';
@@ -32,7 +32,7 @@
 // app.use('/api/auth', authRoutes);
 // app.use('/api/users', userRoutes);
 // app.use('/api/tiles', tileRoutes);
-// app.use('/api/parties', partyRoutes);
+// app.use('/api/companies', companyRoutes);
 // app.use('/api/bookings', bookingRoutes);
 // app.use('/api/dispatches', dispatchRoutes);
 // app.use('/api/restocks', restockRoutes);
@@ -59,7 +59,7 @@ import cors from 'cors';
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import tileRoutes from './routes/tileRoutes.js';
-import partyRoutes from './routes/partyRoutes.js';
+import companyRoutes from './routes/companyRoutes.js';
 import bookingRoutes from './routes/bookingRoutes.js';
 import dispatchRoutes from './routes/dispatchRoutes.js';
 import restockRoutes from './routes/restockRoutes.js';
@@ -84,7 +84,7 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev', { str
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/tiles', tileRoutes);
-app.use('/api/parties', partyRoutes);
+app.use('/api/companies', companyRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/dispatches', dispatchRoutes);
 app.use('/api/restocks', restockRoutes);

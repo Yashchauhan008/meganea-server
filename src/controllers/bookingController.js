@@ -8,7 +8,7 @@ import { generateId } from '../services/idGenerator.js';
 import { v2 as cloudinary } from 'cloudinary';
 
 export const createBooking = asyncHandler(async (req, res) => {
-  const { party, salesman, lpoNumber, tilesList, notes } = req.body;
+  const { company, salesman, lpoNumber, tilesList, notes } = req.body;
 
   if (!tilesList || tilesList.length === 0) {
     res.status(400);
@@ -39,7 +39,7 @@ export const createBooking = asyncHandler(async (req, res) => {
 
     const booking = new Booking({
       bookingId,
-      party,
+      company,
       salesman,
       lpoNumber,
       tilesList,
@@ -107,7 +107,7 @@ export const cancelBooking = asyncHandler(async (req, res) => {
 export const getAllBookings = asyncHandler(async (req, res) => {
   // Logic to filter bookings by salesman or other criteria can be added here
   const bookings = await Booking.find({})
-    .populate('party', 'partyName')
+    .populate('company', 'companyName')
     .populate('salesman', 'username')
     .sort({ createdAt: -1 });
   res.status(200).json(bookings);
@@ -116,7 +116,7 @@ export const getAllBookings = asyncHandler(async (req, res) => {
 // --- GET BOOKING BY ID ---
 export const getBookingById = asyncHandler(async (req, res) => {
   const booking = await Booking.findById(req.params.id)
-      .populate('party', 'partyName contactPerson')
+      .populate('company', 'companyName contactPerson')
       .populate('salesman', 'username')
       .populate({
           path: 'tilesList.tile',
@@ -146,7 +146,7 @@ export const getBookingById = asyncHandler(async (req, res) => {
 });
 
 export const updateBooking = asyncHandler(async (req, res) => {
-  const { party, salesman, lpoNumber, tilesList, notes } = req.body;
+  const { company, salesman, lpoNumber, tilesList, notes } = req.body;
   const { id } = req.params;
 
   if (!tilesList || tilesList.length === 0) {
@@ -194,7 +194,7 @@ export const updateBooking = asyncHandler(async (req, res) => {
       // --- End of Stock Logic ---
 
       // Update the booking document itself
-      existingBooking.party = party;
+      existingBooking.company = company;
       existingBooking.salesman = salesman;
       existingBooking.lpoNumber = lpoNumber;
       existingBooking.notes = notes;

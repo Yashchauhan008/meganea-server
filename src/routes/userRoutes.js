@@ -41,7 +41,7 @@ import {
   getUserById,
   updateSalesman,
   deleteSalesman,
-  getSalesmanParties,
+  getSalesmanCompanies,
 } from '../controllers/userController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
@@ -59,7 +59,7 @@ router.route('/salesmen').get(getAllSalesmen);
 
 // --- THIS IS THE CRITICAL FIX ---
 // Define more specific routes BEFORE generic ones.
-router.route('/salesman/:id/parties').get(getSalesmanParties);
+router.route('/salesman/:id/companies').get(getSalesmanCompanies);
 router.route('/salesman/:id').put(updateSalesman).delete(deleteSalesman);
 // ---------------------------------
 

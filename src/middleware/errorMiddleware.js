@@ -16,7 +16,7 @@ const errorHandler = (err, req, res, next) => {
     const field = Object.keys(err.keyValue)[0];
     const value = err.keyValue[field];
     // Create a user-friendly message
-    message = `A party with the ${field} '${value}' already exists. Please use a different value.`;
+    message = `A company with the ${field} '${value}' already exists. Please use a different value.`;
   }
   // ---------------------------------------------
 

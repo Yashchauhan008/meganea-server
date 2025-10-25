@@ -1,6 +1,6 @@
 import User from '../models/userModel.js';
 import asyncHandler from '../utils/asyncHandler.js';
-import Party from '../models/partyModel.js'; // <--- ADD THIS LINE
+import Company from '../models/companyModel.js'; // <--- ADD THIS LINE
 import logger from '../config/logger.js'; // Assuming you use logger here too
 
 
@@ -189,19 +189,19 @@ export const deleteSalesman = asyncHandler(async (req, res) => {
 });
 
 /**
- * @desc    Get all parties for a specific salesman
- * @route   GET /api/users/salesman/:id/parties
+ * @desc    Get all companies for a specific salesman
+ * @route   GET /api/users/salesman/:id/companies
  * @access  Private/Admin, Private/Dubai-Staff
  */
-export const getSalesmanParties = asyncHandler(async (req, res) => {
+export const getSalesmanCompanies = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const salesman = await User.findById(id);
   if (!salesman || salesman.role !== 'salesman') {
     res.status(404);
     throw new Error('Salesman not found');
   }
-  const parties = await Party.find({ salesman: id })
-    .select('partyName contactPerson contactNumber')
-    .sort({ partyName: 1 });
-  res.status(200).json(parties || []);
+  const companies = await Company.find({ salesman: id })
+    .select('companyName contactPerson contactNumber')
+    .sort({ companyName: 1 });
+  res.status(200).json(companies || []);
 });
