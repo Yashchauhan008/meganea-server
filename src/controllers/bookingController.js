@@ -1,15 +1,14 @@
+
+
 import mongoose from 'mongoose';
 import Booking from '../models/bookingModel.js';
 import Tile from '../models/tileModel.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { generateId } from '../services/idGenerator.js';
-import { v2 as cloudinary } from 'cloudinary';
 
-// @desc    Create a new booking
-// @route   POST /api/bookings
-// @access  Private/Admin, Private/Dubai-Staff, Private/Salesman
+
 export const createBooking = asyncHandler(async (req, res) => {
-  const { bookingType, party, salesman, lpoNumber, tilesList, notes } = req.body;
+  const { party, salesman, lpoNumber, tilesList, notes } = req.body;
 
   if (!tilesList || tilesList.length === 0) {
     res.status(400);
@@ -20,15 +19,18 @@ export const createBooking = asyncHandler(async (req, res) => {
   session.startTransaction();
 
   try {
-    // Check stock and update bookedStock for all tiles in the transaction
     for (const item of tilesList) {
+      // We still find the tile to ensure it exists and to update it.
       const tile = await Tile.findById(item.tile).session(session);
       if (!tile) {
         throw new Error(`Tile with ID ${item.tile} not found.`);
       }
-      if (tile.availableStock < item.quantity) {
-        throw new Error(`Not enough available stock for tile ${tile.name}. Available: ${tile.availableStock}, Requested: ${item.quantity}`);
-      }
+
+      // --- LOGIC CHANGE ---
+      // The check for available stock has been REMOVED to allow over-booking.
+      // The system now assumes a restock request will handle any deficit.
+      
+      // We still increase the booked stock amount.
       tile.stockDetails.bookedStock += item.quantity;
       await tile.save({ session });
     }
@@ -37,7 +39,6 @@ export const createBooking = asyncHandler(async (req, res) => {
 
     const booking = new Booking({
       bookingId,
-      bookingType,
       party,
       salesman,
       lpoNumber,
@@ -53,139 +54,168 @@ export const createBooking = asyncHandler(async (req, res) => {
 
   } catch (error) {
     await session.abortTransaction();
-    res.status(400); // Bad request for stock issues
+    res.status(400);
     throw new Error(error.message || 'Failed to create booking');
   } finally {
     session.endSession();
   }
 });
 
-// @desc    Get all bookings
-// @route   GET /api/bookings
-// @access  Private/Admin, Private/Dubai-Staff, Private/Salesman
+
+// --- CANCEL BOOKING ---
+// @desc    Cancel a booking and revert stock
+// @route   PATCH /api/bookings/:id/cancel
+export const cancelBooking = asyncHandler(async (req, res) => {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+        const booking = await Booking.findById(req.params.id).session(session);
+
+        if (!booking) {
+            throw new Error('Booking not found');
+        }
+
+        if (booking.status === 'Cancelled' || booking.status === 'Completed') {
+            throw new Error(`Cannot cancel a booking that is already ${booking.status}.`);
+        }
+        
+        // Revert the booked stock for each tile in the booking
+        for (const item of booking.tilesList) {
+            await Tile.findByIdAndUpdate(
+                item.tile,
+                { $inc: { 'stockDetails.bookedStock': -item.quantity } },
+                { session } // Ensure this operation is part of the transaction
+            );
+        }
+
+        // Update the booking status
+        booking.status = 'Cancelled';
+        const updatedBooking = await booking.save({ session });
+
+        await session.commitTransaction();
+        res.status(200).json(updatedBooking);
+
+    } catch (error) {
+        await session.abortTransaction();
+        res.status(400);
+        throw new Error(error.message || 'Failed to cancel booking');
+    } finally {
+        session.endSession();
+    }
+});
+
+
+// --- GET ALL BOOKINGS ---
 export const getAllBookings = asyncHandler(async (req, res) => {
-  let query = {};
-  if (req.user.role === 'salesman') {
-    query.salesman = req.user._id;
-  }
-  const bookings = await Booking.find(query)
+  // Logic to filter bookings by salesman or other criteria can be added here
+  const bookings = await Booking.find({})
     .populate('party', 'partyName')
     .populate('salesman', 'username')
-    .populate('createdBy', 'username')
     .sort({ createdAt: -1 });
-
   res.status(200).json(bookings);
 });
 
-// @desc    Get a single booking by ID
-// @route   GET /api/bookings/:id
-// @access  Private/Admin, Private/Dubai-Staff, Private/Salesman
+// --- GET BOOKING BY ID ---
 export const getBookingById = asyncHandler(async (req, res) => {
-  const booking = await Booking.findById(req.params.id)
-    .populate('party', 'partyName contactPerson')
-    .populate('salesman', 'username')
-    .populate('tilesList.tile', 'name tileId size')
-    .populate('dispatchOrders');
-
-  if (!booking) {
-    res.status(404);
-    throw new Error('Booking not found');
-  }
-  
-  if (req.user.role === 'salesman' && booking.salesman._id.toString() !== req.user._id.toString()) {
-    res.status(403);
-    throw new Error('Not authorized to view this booking');
-  }
-
-  res.status(200).json(booking);
-});
-
-// @desc    Add an unprocessed delivery note image to a booking
-// @route   POST /api/bookings/:id/upload-image
-// @access  Private/Admin, Private/Dubai-Staff, Private/Labor
-export const addUnprocessedImage = asyncHandler(async (req, res) => {
-  if (!req.file) {
-    res.status(400);
-    throw new Error('Image file is required');
-  }
-
-  const booking = await Booking.findById(req.params.id);
-  if (!booking) {
-    // If booking not found, delete the uploaded image to prevent orphans
-    await cloudinary.uploader.destroy(req.file.filename);
-    res.status(404);
-    throw new Error('Booking not found');
-  }
-
-  const image = {
-    imageUrl: req.file.path,
-    publicId: req.file.filename,
-    uploadedBy: req.user._id,
-  };
-
-  booking.unprocessedImages.push(image);
-  await booking.save();
-
-  res.status(200).json(booking);
-});
-
-// @desc    Cancel a booking
-// @route   PATCH /api/bookings/:id/cancel
-// @access  Private/Admin, Private/Dubai-Staff
-export const cancelBooking = asyncHandler(async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
-    const booking = await Booking.findById(req.params.id).session(session);
-    if (!booking) {
-      throw new Error('Booking not found');
-    }
-
-    if (booking.status === 'Completed' || booking.status === 'Cancelled') {
-      throw new Error(`Booking is already ${booking.status.toLowerCase()}`);
-    }
-    
-    if (booking.dispatchOrders.length > 0) {
-        throw new Error('Cannot cancel a booking that has already been partially or fully dispatched.');
-    }
-
-    // Revert the booked stock
-    for (const item of booking.tilesList) {
-      await Tile.findByIdAndUpdate(
-        item.tile,
-        { $inc: { 'stockDetails.bookedStock': -item.quantity } },
-        { session }
-      );
-    }
-
-    booking.status = 'Cancelled';
-    const updatedBooking = await booking.save({ session });
-
-    await session.commitTransaction();
-    res.status(200).json(updatedBooking);
-
-  } catch (error) {
-    await session.abortTransaction();
-    res.status(400);
-    throw new Error(error.message || 'Failed to cancel booking');
-  } finally {
-    session.endSession();
-  }
-});
-
-// @desc    Manually update booking status (for admin overrides)
-// @route   PATCH /api/bookings/:id/status
-// @access  Private/Admin
-export const updateBookingStatus = asyncHandler(async (req, res) => {
-    // This is a simplified override. A real implementation would have more checks.
-    const { status } = req.body;
-    const booking = await Booking.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    const booking = await Booking.findById(req.params.id)
+        .populate('party', 'partyName contactPerson')
+        .populate('salesman', 'username')
+        .populate('tilesList.tile', 'name tileId size stockDetails'); // Populate full tile details
 
     if (!booking) {
         res.status(404);
         throw new Error('Booking not found');
     }
-
     res.status(200).json(booking);
+});
+
+export const updateBooking = asyncHandler(async (req, res) => {
+  const { party, salesman, lpoNumber, tilesList, notes } = req.body;
+  const { id } = req.params;
+
+  if (!tilesList || tilesList.length === 0) {
+      res.status(400);
+      throw new Error('Booking must contain at least one tile');
+  }
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+      const existingBooking = await Booking.findById(id).session(session);
+      if (!existingBooking) {
+          throw new Error('Booking not found');
+      }
+      if (existingBooking.status !== 'Booked') {
+          throw new Error(`Cannot edit a booking with status '${existingBooking.status}'`);
+      }
+
+      // --- Stock Difference Calculation ---
+      const stockAdjustments = new Map();
+
+      // 1. Add back the old quantities to the map
+      for (const item of existingBooking.tilesList) {
+          const tileId = item.tile.toString();
+          stockAdjustments.set(tileId, (stockAdjustments.get(tileId) || 0) - item.quantity);
+      }
+
+      // 2. Subtract the new quantities from the map
+      for (const item of tilesList) {
+          const tileId = item.tile.toString();
+          stockAdjustments.set(tileId, (stockAdjustments.get(tileId) || 0) + item.quantity);
+      }
+      
+      // 3. Apply the final calculated differences to the database
+      for (const [tileId, adjustment] of stockAdjustments.entries()) {
+          if (adjustment === 0) continue; // No change for this tile
+
+          await Tile.findByIdAndUpdate(
+              tileId,
+              { $inc: { 'stockDetails.bookedStock': adjustment } },
+              { session, new: true }
+          );
+      }
+      // --- End of Stock Logic ---
+
+      // Update the booking document itself
+      existingBooking.party = party;
+      existingBooking.salesman = salesman;
+      existingBooking.lpoNumber = lpoNumber;
+      existingBooking.notes = notes;
+      existingBooking.tilesList = tilesList; // The new list from req.body
+      
+      const updatedBooking = await existingBooking.save({ session });
+
+      await session.commitTransaction();
+      res.status(200).json(updatedBooking);
+
+  } catch (error) {
+      await session.abortTransaction();
+      res.status(400);
+      throw new Error(error.message || 'Failed to update booking');
+  } finally {
+      session.endSession();
+  }
+});
+
+export const deleteBooking = asyncHandler(async (req, res) => {
+  // This is for administrative "hiding". It does NOT revert stock.
+  // For reverting stock, the "cancelBooking" endpoint should be used.
+  const booking = await Booking.findById(req.params.id);
+
+  if (!booking) {
+      res.status(404);
+      throw new Error('Booking not found');
+  }
+
+  // Use the static archive method from the model if you have one
+  if (typeof Booking.archive === 'function') {
+      await Booking.archive(req.params.id);
+  } else { // Fallback to manual soft delete
+      booking.deleted = true;
+      await booking.save();
+  }
+  
+  res.status(200).json({ message: 'Booking archived successfully' });
 });

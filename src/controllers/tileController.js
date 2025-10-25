@@ -212,6 +212,27 @@ export const getAllTiles = asyncHandler(async (req, res) => {
     res.status(200).json({ tiles, page: pageNum, pages: Math.ceil(totalTiles / limitNum), total: totalTiles });
 });
 
+export const getTilesForBooking = asyncHandler(async (req, res) => {
+  const { search } = req.query;
+  const query = {};
+
+  if (search) {
+      const searchRegex = new RegExp(search, 'i');
+      query.$or = [{ name: searchRegex }, { number: searchRegex }];
+  } else {
+      // Return an empty array if there's no search term to avoid sending all tiles
+      return res.status(200).json([]);
+  }
+
+  const tiles = await Tile.find(query)
+      // Select only the fields absolutely necessary for the booking form
+      .select('name number size conversionFactor stockDetails')
+      .limit(10); // Limit the results for a fast search dropdown
+
+  res.status(200).json(tiles);
+});
+
+
 // --- READ (ONE) ---
 export const getTileById = asyncHandler(async (req, res) => {
   // The middleware on the model ensures we can't find a deleted tile

@@ -4,21 +4,27 @@ import {
   getAllTiles,
   getTileById,
   updateTile,
-  deleteTile // This is the soft delete
+  deleteTile,
+  getTilesForBooking
 } from '../controllers/tileController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// The GET route is public to see active tiles
+// --- THIS IS THE FIX ---
+// Define the most specific routes FIRST.
+router.route('/for-booking').get(getTilesForBooking);
+// ---------------------
+
+// Now define the general routes.
 router.route('/')
   .get(getAllTiles)
   .post(protect, authorize('admin', 'dubai-staff', 'india-staff'), createTile);
 
-// All actions on a specific tile ID
+// Finally, define the "greedy" dynamic route LAST.
 router.route('/:id')
-  .get(getTileById) // Public
+  .get(getTileById)
   .put(protect, authorize('admin', 'dubai-staff', 'india-staff'), updateTile)
-  .delete(protect, authorize('admin', 'dubai-staff'), deleteTile); // This performs the soft delete
+  .delete(protect, authorize('admin', 'dubai-staff'), deleteTile);
 
 export default router;
