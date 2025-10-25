@@ -64,6 +64,7 @@ import bookingRoutes from './routes/bookingRoutes.js';
 import dispatchRoutes from './routes/dispatchRoutes.js';
 import restockRoutes from './routes/restockRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
+import asyncHandler from './utils/asyncHandler.js';
 
 dotenv.config();
 connectDB();
@@ -92,6 +93,10 @@ app.use('/api/restocks', restockRoutes);
 // --- THIS IS THE CORRECTED ROUTE ---
 // It now correctly uses the plural '/uploads' to match the frontend.
 app.use('/api/uploads', uploadRoutes);
+
+app.get("/",asyncHandler(async (req, res) => {
+  res.send("hello from meganea")
+}));
 // -----------------------------------
 
 // Error Handling Middleware

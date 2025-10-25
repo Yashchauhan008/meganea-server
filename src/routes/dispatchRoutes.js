@@ -39,9 +39,14 @@ router.route('/')
   .get(getAllDispatchOrders);
 
 // --- UPDATED ROUTE FOR A SPECIFIC DISPATCH ---
-router.route('/:id')
+// router.route('/:id')
+//   .get(getDispatchOrderById)
+//   .put(updateDispatchOrder) // Add PUT for editing
+//   .delete(authorize('admin'), deleteDispatchOrder); // Add DELETE, restricted to admin
+
+  router.route('/:id')
   .get(getDispatchOrderById)
-  .put(updateDispatchOrder) // Add PUT for editing
-  .delete(authorize('admin'), deleteDispatchOrder); // Add DELETE, restricted to admin
+  .put(authorize('admin', 'dubai-staff'), updateDispatchOrder) // Ensure this line exists
+  .delete(authorize('admin'), deleteDispatchOrder);
 
 export default router;

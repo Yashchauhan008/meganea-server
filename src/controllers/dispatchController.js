@@ -536,27 +536,63 @@ export const createDispatchOrder = asyncHandler(async (req, res) => {
 // @desc    Get all dispatch orders
 // @route   GET /api/dispatches
 // @access  Private/Admin, Private/Dubai-Staff
+// export const getAllDispatchOrders = asyncHandler(async (req, res) => {
+//   const orders = await DispatchOrder.find({})
+//     .populate({
+//         path: 'booking',
+//         select: 'bookingId company dispatchOrders', // Ensure dispatchOrders is included for the edit logic
+//         populate: [
+//             { path: 'company', select: 'companyName' },
+//             { 
+//                 path: 'dispatchOrders', // Deeply populate for the edit context calculation
+//                 populate: { path: 'dispatchedItems.tile', select: 'name' }
+//             }
+//         ]
+//     })
+//     .populate('createdBy', 'username')
+//     .populate({ // --- THIS IS THE KEY ADDITION ---
+//         path: 'dispatchedItems.tile',
+//         select: 'name size' // Select the fields you want to display
+//     })
+//     .sort({ createdAt: -1 });
+//   res.status(200).json(orders);
+// });
 export const getAllDispatchOrders = asyncHandler(async (req, res) => {
-  const orders = await DispatchOrder.find({})
-    .populate({
-        path: 'booking',
-        select: 'bookingId company dispatchOrders', // Ensure dispatchOrders is included for the edit logic
-        populate: [
-            { path: 'company', select: 'companyName' },
-            { 
-                path: 'dispatchOrders', // Deeply populate for the edit context calculation
-                populate: { path: 'dispatchedItems.tile', select: 'name' }
-            }
-        ]
-    })
-    .populate('createdBy', 'username')
-    .populate({ // --- THIS IS THE KEY ADDITION ---
-        path: 'dispatchedItems.tile',
-        select: 'name size' // Select the fields you want to display
-    })
-    .sort({ createdAt: -1 });
-  res.status(200).json(orders);
-});
+    const orders = await DispatchOrder.find({})
+      .populate({
+          path: 'booking',
+          select: 'bookingId company tilesList dispatchOrders', // Select all fields needed for context
+          populate: [
+              { 
+                  path: 'company', 
+                  select: 'companyName' 
+              },
+              { 
+                  // CRITICAL: Populate the tile details within the booking's tilesList
+                  path: 'tilesList.tile', 
+                  select: 'name size conversionFactor'
+              },
+              { 
+                  // CRITICAL: Also populate the tiles within OTHER dispatches for calculation
+                  path: 'dispatchOrders',
+                  populate: { 
+                      path: 'dispatchedItems.tile', 
+                      select: 'name size' 
+                  }
+              }
+          ]
+      })
+      .populate('createdBy', 'username')
+      .populate({
+          // This populates the tiles for the main dispatch order card display
+          path: 'dispatchedItems.tile',
+          select: 'name size'
+      })
+      .sort({ createdAt: -1 });
+  
+    res.status(200).json(orders);
+  });
+  
 
 
 // @desc    Get a single dispatch order by ID
@@ -577,86 +613,174 @@ export const getDispatchOrderById = asyncHandler(async (req, res) => {
 // @desc    Update a dispatch order
 // @route   PUT /api/dispatches/:id
 // @access  Private/Admin, Private/Dubai-Staff
+// export const updateDispatchOrder = asyncHandler(async (req, res) => {
+//     const { dispatchedItems, invoiceNumber } = req.body;
+//     const { id } = req.params;
+
+//     const session = await mongoose.startSession();
+//     session.startTransaction();
+
+//     try {
+//         const existingDispatch = await DispatchOrder.findById(id).session(session);
+//         if (!existingDispatch) {
+//             throw new Error('Dispatch Order not found');
+//         }
+
+//         // --- Stock Difference Calculation (The Critical Part) ---
+//         const stockAdjustments = new Map();
+
+//         // 1. Add back the OLD quantities to the stock. This reverts the dispatch.
+//         for (const item of existingDispatch.dispatchedItems) {
+//             const tileId = item.tile.toString();
+//             const currentAdjustment = stockAdjustments.get(tileId) || { current: 0, booked: 0 };
+//             stockAdjustments.set(tileId, {
+//                 current: currentAdjustment.current + item.quantity,
+//                 booked: currentAdjustment.booked + item.quantity,
+//             });
+//         }
+
+//         // 2. Subtract the NEW quantities from the stock. This applies the new dispatch.
+//         for (const item of dispatchedItems) {
+//             const tileId = item.tile.toString();
+//             const currentAdjustment = stockAdjustments.get(tileId) || { current: 0, booked: 0 };
+//             stockAdjustments.set(tileId, {
+//                 current: currentAdjustment.current - item.quantity,
+//                 booked: currentAdjustment.booked - item.quantity,
+//             });
+//         }
+        
+//         // 3. Apply the final calculated differences to the database.
+//         for (const [tileId, adjustment] of stockAdjustments.entries()) {
+//             if (adjustment.current === 0 && adjustment.booked === 0) continue;
+//             await Tile.findByIdAndUpdate(
+//                 tileId,
+//                 { $inc: { 
+//                     'stockDetails.availableStock': adjustment.current,
+//                     'stockDetails.bookedStock': adjustment.booked,
+//                 }},
+//                 { session }
+//             );
+//         }
+//         // --- End of Stock Logic ---
+
+//         // Update the dispatch document itself
+//         existingDispatch.invoiceNumber = invoiceNumber;
+//         existingDispatch.dispatchedItems = dispatchedItems;
+        
+//         const updatedDispatch = await existingDispatch.save({ session });
+
+//         // We must also re-evaluate the parent booking's status
+//         const booking = await Booking.findById(existingDispatch.booking).session(session);
+//         if (booking) {
+//             const allDispatches = await DispatchOrder.find({ booking: booking._id }).session(session);
+//             const totalDispatchedQty = allDispatches.reduce((acc, order) => acc + order.dispatchedItems.reduce((sum, item) => sum + item.quantity, 0), 0);
+//             const totalBookedQty = booking.tilesList.reduce((acc, item) => acc + item.quantity, 0);
+
+//             if (totalDispatchedQty >= totalBookedQty) {
+//                 booking.status = 'Completed';
+//             } else if (totalDispatchedQty > 0) {
+//                 booking.status = 'Partially Dispatched';
+//             } else {
+//                 booking.status = 'Booked';
+//             }
+//             await booking.save({ session });
+//         }
+
+//         await session.commitTransaction();
+//         res.status(200).json(updatedDispatch);
+
+//     } catch (error) {
+//         await session.abortTransaction();
+//         res.status(400);
+//         throw new Error(error.message || 'Failed to update dispatch order');
+//     } finally {
+//         session.endSession();
+//     }
+// });
+
 export const updateDispatchOrder = asyncHandler(async (req, res) => {
-    const { dispatchedItems, invoiceNumber } = req.body;
+    const { invoiceNumber, dispatchedItems: newItems } = req.body;
     const { id } = req.params;
 
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-        const existingDispatch = await DispatchOrder.findById(id).session(session);
-        if (!existingDispatch) {
-            throw new Error('Dispatch Order not found');
-        }
+        const dispatch = await DispatchOrder.findById(id).session(session);
+        if (!dispatch) throw new Error('Dispatch Order not found.');
 
-        // --- Stock Difference Calculation (The Critical Part) ---
+        const booking = await Booking.findById(dispatch.booking).session(session);
+        if (!booking) throw new Error('Associated booking not found.');
+
+        // --- Intelligent Stock Difference Calculation ---
         const stockAdjustments = new Map();
 
-        // 1. Add back the OLD quantities to the stock. This reverts the dispatch.
-        for (const item of existingDispatch.dispatchedItems) {
-            const tileId = item.tile.toString();
-            const currentAdjustment = stockAdjustments.get(tileId) || { current: 0, booked: 0 };
-            stockAdjustments.set(tileId, {
-                current: currentAdjustment.current + item.quantity,
-                booked: currentAdjustment.booked + item.quantity,
-            });
+        // 1. Add back the OLD quantities from this dispatch to the map
+        for (const oldItem of dispatch.dispatchedItems) {
+            const tileId = oldItem.tile.toString();
+            stockAdjustments.set(tileId, (stockAdjustments.get(tileId) || 0) + oldItem.quantity);
         }
 
-        // 2. Subtract the NEW quantities from the stock. This applies the new dispatch.
-        for (const item of dispatchedItems) {
-            const tileId = item.tile.toString();
-            const currentAdjustment = stockAdjustments.get(tileId) || { current: 0, booked: 0 };
-            stockAdjustments.set(tileId, {
-                current: currentAdjustment.current - item.quantity,
-                booked: currentAdjustment.booked - item.quantity,
-            });
+        // 2. Subtract the NEW quantities from the map
+        for (const newItem of newItems) {
+            const tileId = newItem.tile.toString();
+            stockAdjustments.set(tileId, (stockAdjustments.get(tileId) || 0) - newItem.quantity);
         }
-        
-        // 3. Apply the final calculated differences to the database.
+        // The map now holds the net difference, e.g., +2 means we need to add 2 boxes back to stock.
+
+        // 3. Apply the final calculated differences to the database
         for (const [tileId, adjustment] of stockAdjustments.entries()) {
-            if (adjustment.current === 0 && adjustment.booked === 0) continue;
+            if (adjustment === 0) continue; // No change for this tile
+
+            // We must also check if the new total dispatch quantity exceeds the booking limit
+            const bookingItem = booking.tilesList.find(bi => bi.tile.toString() === tileId);
+            const otherDispatches = await DispatchOrder.find({ booking: booking._id, _id: { $ne: id } }).session(session);
+            let totalInOtherDispatches = 0;
+            otherDispatches.forEach(od => {
+                const item = od.dispatchedItems.find(oi => oi.tile.toString() === tileId);
+                if (item) totalInOtherDispatches += item.quantity;
+            });
+
+            const newQuantityForTile = newItems.find(ni => ni.tile.toString() === tileId)?.quantity || 0;
+
+            if ((totalInOtherDispatches + newQuantityForTile) > bookingItem.quantity) {
+                throw new Error(`Editing failed: The new quantity for a tile exceeds the total amount booked.`);
+            }
+
+            // Apply the stock change. A positive adjustment means adding stock back.
             await Tile.findByIdAndUpdate(
                 tileId,
-                { $inc: { 
-                    'stockDetails.availableStock': adjustment.current,
-                    'stockDetails.bookedStock': adjustment.booked,
-                }},
+                { $inc: { 'stockDetails.currentStock': adjustment, 'stockDetails.bookedStock': adjustment } },
                 { session }
             );
         }
         // --- End of Stock Logic ---
 
         // Update the dispatch document itself
-        existingDispatch.invoiceNumber = invoiceNumber;
-        existingDispatch.dispatchedItems = dispatchedItems;
-        
-        const updatedDispatch = await existingDispatch.save({ session });
+        dispatch.invoiceNumber = invoiceNumber;
+        dispatch.dispatchedItems = newItems;
+        await dispatch.save({ session });
 
-        // We must also re-evaluate the parent booking's status
-        const booking = await Booking.findById(existingDispatch.booking).session(session);
-        if (booking) {
-            const allDispatches = await DispatchOrder.find({ booking: booking._id }).session(session);
-            const totalDispatchedQty = allDispatches.reduce((acc, order) => acc + order.dispatchedItems.reduce((sum, item) => sum + item.quantity, 0), 0);
-            const totalBookedQty = booking.tilesList.reduce((acc, item) => acc + item.quantity, 0);
+        // Recalculate and update the parent booking's status
+        const allDispatches = await DispatchOrder.find({ booking: booking._id }).session(session);
+        const totalBookedQty = booking.tilesList.reduce((acc, item) => acc + item.quantity, 0);
+        const totalDispatchedQty = allDispatches.reduce((total, order) => total + order.dispatchedItems.reduce((sum, item) => sum + item.quantity, 0), 0);
 
-            if (totalDispatchedQty >= totalBookedQty) {
-                booking.status = 'Completed';
-            } else if (totalDispatchedQty > 0) {
-                booking.status = 'Partially Dispatched';
-            } else {
-                booking.status = 'Booked';
-            }
-            await booking.save({ session });
+        if (totalDispatchedQty >= totalBookedQty) {
+            booking.status = 'Completed';
+        } else if (totalDispatchedQty > 0) {
+            booking.status = 'Partially Dispatched';
+        } else {
+            booking.status = 'Booked';
         }
+        await booking.save({ session });
 
         await session.commitTransaction();
-        res.status(200).json(updatedDispatch);
+        res.status(200).json(dispatch);
 
     } catch (error) {
         await session.abortTransaction();
-        res.status(400);
-        throw new Error(error.message || 'Failed to update dispatch order');
+        res.status(400).throw(new Error(error.message || 'Failed to update dispatch order.'));
     } finally {
         session.endSession();
     }
@@ -666,6 +790,64 @@ export const updateDispatchOrder = asyncHandler(async (req, res) => {
 // @desc    Delete a dispatch order (reverting stock)
 // @route   DELETE /api/dispatches/:id
 // @access  Private/Admin
+// export const deleteDispatchOrder = asyncHandler(async (req, res) => {
+//     const { id } = req.params;
+
+//     const session = await mongoose.startSession();
+//     session.startTransaction();
+
+//     try {
+//         const dispatchToDelete = await DispatchOrder.findById(id).session(session);
+//         if (!dispatchToDelete) {
+//             throw new Error('Dispatch Order not found');
+//         }
+
+//         // --- Revert Stock Logic ---
+//         // Add the dispatched quantities back to the stock.
+//         for (const item of dispatchToDelete.dispatchedItems) {
+//             await Tile.findByIdAndUpdate(
+//                 item.tile,
+//                 { $inc: { 
+//                     'stockDetails.availableStock': item.quantity,
+//                     'stockDetails.bookedStock': item.quantity,
+//                 }},
+//                 { session }
+//             );
+//         }
+//         // --- End of Revert Logic ---
+
+//         // Remove the dispatch order itself
+//         await dispatchToDelete.deleteOne({ session });
+
+//         // Re-evaluate the parent booking's status
+//         const booking = await Booking.findById(dispatchToDelete.booking).session(session);
+//         if (booking) {
+//             // Remove the reference from the booking's dispatchOrders array
+//             booking.dispatchOrders.pull(dispatchToDelete._id);
+
+//             const allDispatches = await DispatchOrder.find({ booking: booking._id }).session(session);
+//             const totalDispatchedQty = allDispatches.reduce((acc, order) => acc + order.dispatchedItems.reduce((sum, item) => sum + item.quantity, 0), 0);
+
+//             if (totalDispatchedQty > 0) {
+//                 booking.status = 'Partially Dispatched';
+//             } else {
+//                 booking.status = 'Booked'; // Revert to Booked if no dispatches are left
+//             }
+//             await booking.save({ session });
+//         }
+
+//         await session.commitTransaction();
+//         res.status(200).json({ message: 'Dispatch Order deleted successfully and stock reverted.' });
+
+//     } catch (error) {
+//         await session.abortTransaction();
+//         res.status(400);
+//         throw new Error(error.message || 'Failed to delete dispatch order');
+//     } finally {
+//         session.endSession();
+//     }
+// });
+
 export const deleteDispatchOrder = asyncHandler(async (req, res) => {
     const { id } = req.params;
 
@@ -673,52 +855,44 @@ export const deleteDispatchOrder = asyncHandler(async (req, res) => {
     session.startTransaction();
 
     try {
-        const dispatchToDelete = await DispatchOrder.findById(id).session(session);
-        if (!dispatchToDelete) {
-            throw new Error('Dispatch Order not found');
-        }
+        const dispatch = await DispatchOrder.findById(id).session(session);
+        if (!dispatch) throw new Error('Dispatch Order not found.');
 
-        // --- Revert Stock Logic ---
-        // Add the dispatched quantities back to the stock.
-        for (const item of dispatchToDelete.dispatchedItems) {
+        // Revert the stock for all items in this dispatch
+        for (const item of dispatch.dispatchedItems) {
             await Tile.findByIdAndUpdate(
                 item.tile,
-                { $inc: { 
-                    'stockDetails.availableStock': item.quantity,
-                    'stockDetails.bookedStock': item.quantity,
-                }},
+                { $inc: { 'stockDetails.currentStock': item.quantity, 'stockDetails.bookedStock': item.quantity } },
                 { session }
             );
         }
-        // --- End of Revert Logic ---
 
-        // Remove the dispatch order itself
-        await dispatchToDelete.deleteOne({ session });
-
-        // Re-evaluate the parent booking's status
-        const booking = await Booking.findById(dispatchToDelete.booking).session(session);
+        // Update the parent booking's status
+        const booking = await Booking.findById(dispatch.booking).session(session);
         if (booking) {
-            // Remove the reference from the booking's dispatchOrders array
-            booking.dispatchOrders.pull(dispatchToDelete._id);
+            const allOtherDispatches = await DispatchOrder.find({ booking: booking._id, _id: { $ne: id } }).session(session);
+            const totalBookedQty = booking.tilesList.reduce((acc, item) => acc + item.quantity, 0);
+            const remainingDispatchedQty = allOtherDispatches.reduce((total, order) => total + order.dispatchedItems.reduce((sum, item) => sum + item.quantity, 0), 0);
 
-            const allDispatches = await DispatchOrder.find({ booking: booking._id }).session(session);
-            const totalDispatchedQty = allDispatches.reduce((acc, order) => acc + order.dispatchedItems.reduce((sum, item) => sum + item.quantity, 0), 0);
-
-            if (totalDispatchedQty > 0) {
+            if (remainingDispatchedQty >= totalBookedQty) {
+                booking.status = 'Completed';
+            } else if (remainingDispatchedQty > 0) {
                 booking.status = 'Partially Dispatched';
             } else {
-                booking.status = 'Booked'; // Revert to Booked if no dispatches are left
+                booking.status = 'Booked';
             }
             await booking.save({ session });
         }
 
+        // Now, permanently delete the dispatch order document
+        await dispatch.deleteOne({ session });
+
         await session.commitTransaction();
-        res.status(200).json({ message: 'Dispatch Order deleted successfully and stock reverted.' });
+        res.status(200).json({ message: 'Dispatch order deleted and stock reverted successfully.' });
 
     } catch (error) {
         await session.abortTransaction();
-        res.status(400);
-        throw new Error(error.message || 'Failed to delete dispatch order');
+        res.status(400).throw(new Error(error.message || 'Failed to delete dispatch order.'));
     } finally {
         session.endSession();
     }
