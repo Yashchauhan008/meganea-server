@@ -102,7 +102,7 @@ export const recordArrival = asyncHandler(async (req, res) => {
       tileId,
       {
         $inc: {
-          'stockDetails.currentStock': quantity,
+          'stockDetails.availableStock': quantity,
           'stockDetails.restockingStock': -quantity,
         },
       },

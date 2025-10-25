@@ -5,7 +5,7 @@ import Booking from '../models/bookingModel.js';
 import Tile from '../models/tileModel.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { generateId } from '../services/idGenerator.js';
-
+import { v2 as cloudinary } from 'cloudinary';
 
 export const createBooking = asyncHandler(async (req, res) => {
   const { party, salesman, lpoNumber, tilesList, notes } = req.body;
@@ -63,8 +63,6 @@ export const createBooking = asyncHandler(async (req, res) => {
 
 
 // --- CANCEL BOOKING ---
-// @desc    Cancel a booking and revert stock
-// @route   PATCH /api/bookings/:id/cancel
 export const cancelBooking = asyncHandler(async (req, res) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -105,7 +103,6 @@ export const cancelBooking = asyncHandler(async (req, res) => {
     }
 });
 
-
 // --- GET ALL BOOKINGS ---
 export const getAllBookings = asyncHandler(async (req, res) => {
   // Logic to filter bookings by salesman or other criteria can be added here
@@ -118,16 +115,34 @@ export const getAllBookings = asyncHandler(async (req, res) => {
 
 // --- GET BOOKING BY ID ---
 export const getBookingById = asyncHandler(async (req, res) => {
-    const booking = await Booking.findById(req.params.id)
-        .populate('party', 'partyName contactPerson')
-        .populate('salesman', 'username')
-        .populate('tilesList.tile', 'name tileId size stockDetails'); // Populate full tile details
+  const booking = await Booking.findById(req.params.id)
+      .populate('party', 'partyName contactPerson')
+      .populate('salesman', 'username')
+      .populate({
+          path: 'tilesList.tile',
+          select: 'name tileId size conversionFactor'
+      })
+      .populate({
+          path: 'dispatchOrders',
+          options: { sort: { createdAt: -1 } }, // Show newest dispatches first
+          populate: [
+              {
+                  path: 'dispatchedItems.tile',
+                  select: 'name size'
+              },
+              {
+                  path: 'createdBy',
+                  select: 'username'
+              }
+          ]
+      })
+      .populate('createdBy', 'username'); // Also populate who created the booking itself
 
-    if (!booking) {
-        res.status(404);
-        throw new Error('Booking not found');
-    }
-    res.status(200).json(booking);
+  if (!booking) {
+      res.status(404);
+      throw new Error('Booking not found');
+  }
+  res.status(200).json(booking);
 });
 
 export const updateBooking = asyncHandler(async (req, res) => {
@@ -218,4 +233,33 @@ export const deleteBooking = asyncHandler(async (req, res) => {
   }
   
   res.status(200).json({ message: 'Booking archived successfully' });
+});
+
+export const addUnprocessedImages = asyncHandler(async (req, res) => {
+  if (!req.files || req.files.length === 0) {
+    res.status(400);
+    throw new Error('At least one image file is required');
+  }
+
+  const booking = await Booking.findById(req.params.id);
+  if (!booking) {
+    // If booking not found, delete all uploaded images to prevent orphans
+    for (const file of req.files) {
+      await cloudinary.uploader.destroy(file.filename);
+    }
+    res.status(404);
+    throw new Error('Booking not found');
+  }
+
+  const images = req.files.map(file => ({
+    imageUrl: file.path,
+    publicId: file.filename,
+    uploadedBy: req.user._id,
+  }));
+
+  // Push all new images into the unprocessedImages array
+  booking.unprocessedImages.push(...images);
+  await booking.save();
+
+  res.status(200).json(booking);
 });

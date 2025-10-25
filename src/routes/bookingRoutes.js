@@ -34,11 +34,13 @@ import {
   createBooking,
   getAllBookings,
   getBookingById,
-  updateBooking, // Import new
-  deleteBooking, // Import new
+  updateBooking,
+  deleteBooking,
   cancelBooking,
+  addUnprocessedImages, // The renamed controller for uploads
 } from '../controllers/bookingController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
+import upload from '../config/cloudinary.js'; // <-- THIS IS THE FIX: Import the upload config
 
 const router = express.Router();
 router.use(protect, authorize('admin', 'dubai-staff', 'salesman'));
@@ -47,13 +49,22 @@ router.route('/')
   .get(getAllBookings)
   .post(createBooking);
 
-// --- UPDATED ROUTE FOR A SPECIFIC BOOKING ---
 router.route('/:id')
   .get(getBookingById)
-  .put(authorize('admin', 'dubai-staff'), updateBooking) // Add PUT for editing
-  .delete(authorize('admin'), deleteBooking); // Add DELETE for archiving
+  .put(authorize('admin', 'dubai-staff'), updateBooking)
+  .delete(authorize('admin'), deleteBooking);
 
 router.route('/:id/cancel')
   .patch(authorize('admin', 'dubai-staff'), cancelBooking);
+
+// --- MULTIPLE IMAGE UPLOAD ROUTE ---
+// This route will now work because 'upload' is defined.
+router.post(
+  '/:id/upload-images',
+  protect,
+  authorize('admin', 'dubai-staff', 'labor'),
+  upload.array('images', 5), // 'images' is the field name, 5 is the max file count
+  addUnprocessedImages
+);
 
 export default router;
