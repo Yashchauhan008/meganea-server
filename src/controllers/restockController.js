@@ -6,49 +6,81 @@ import { generateId } from '../services/idGenerator.js';
 
 // @desc    Create a new restock request
 // @route   POST /api/restocks
+// export const createRestockRequest = asyncHandler(async (req, res) => {
+//   const { requestedItems, notes } = req.body;
+
+//   if (!requestedItems || requestedItems.length === 0) {
+//     res.status(400);
+//     throw new Error('Request must contain at least one tile');
+//   }
+
+//   const session = await mongoose.startSession();
+//   session.startTransaction();
+
+//   try {
+//     // For each item, increase the 'restockingStock'
+//     for (const item of requestedItems) {
+//       await Tile.findByIdAndUpdate(
+//         item.tile,
+//         { $inc: { 'stockDetails.restockingStock': item.quantityRequested } },
+//         { session }
+//       );
+//     }
+
+//     const requestId = await generateId('RQ');
+
+//     const restockRequest = new RestockRequest({
+//       requestId,
+//       requestedItems,
+//       notes,
+//       requestedBy: req.user._id,
+//     });
+
+//     const createdRequest = await restockRequest.save({ session });
+
+//     await session.commitTransaction();
+//     res.status(201).json(createdRequest);
+
+//   } catch (error) {
+//     await session.abortTransaction();
+//     res.status(400);
+//     throw new Error(error.message || 'Failed to create restock request');
+//   } finally {
+//     session.endSession();
+//   }
+// });
+
 export const createRestockRequest = asyncHandler(async (req, res) => {
   const { requestedItems, notes } = req.body;
-
   if (!requestedItems || requestedItems.length === 0) {
-    res.status(400);
-    throw new Error('Request must contain at least one tile');
+      res.status(400).throw(new Error('Request must contain at least one tile'));
   }
 
   const session = await mongoose.startSession();
   session.startTransaction();
-
   try {
-    // For each item, increase the 'restockingStock'
-    for (const item of requestedItems) {
-      await Tile.findByIdAndUpdate(
-        item.tile,
-        { $inc: { 'stockDetails.restockingStock': item.quantityRequested } },
-        { session }
-      );
-    }
+      for (const item of requestedItems) {
+          await Tile.findByIdAndUpdate(
+              item.tile,
+              { $inc: { 'stockDetails.restockingStock': item.quantityRequested } },
+              { session, new: true, runValidators: true }
+          );
+      }
 
-    const requestId = await generateId('RQ');
+      const requestId = await generateId('RQ');
+      const restockRequest = new RestockRequest({ requestId, requestedItems, notes, requestedBy: req.user._id });
+      const createdRequest = await restockRequest.save({ session });
 
-    const restockRequest = new RestockRequest({
-      requestId,
-      requestedItems,
-      notes,
-      requestedBy: req.user._id,
-    });
-
-    const createdRequest = await restockRequest.save({ session });
-
-    await session.commitTransaction();
-    res.status(201).json(createdRequest);
-
+      await session.commitTransaction();
+      res.status(201).json(createdRequest);
   } catch (error) {
-    await session.abortTransaction();
-    res.status(400);
-    throw new Error(error.message || 'Failed to create restock request');
+      await session.abortTransaction();
+      res.status(400).json({ message: error.message || 'Failed to create restock request' });
   } finally {
-    session.endSession();
+      session.endSession();
   }
 });
+
 
 // @desc    Get all restock requests
 // @route   GET /api/restocks
@@ -76,100 +108,158 @@ export const getRestockRequestById = asyncHandler(async (req, res) => {
 
 // @desc    Record an arrival of stock against a request
 // @route   POST /api/restocks/:id/record-arrival
+// export const recordArrival = asyncHandler(async (req, res) => {
+//   const { tileId, quantity, notes } = req.body;
+//   const numQuantity = parseInt(quantity, 10);
+//   if (isNaN(numQuantity) || numQuantity <= 0) {
+//       throw new Error('A valid, positive quantity is required.');
+//   }
+//   const { id } = req.params;
+
+//   const session = await mongoose.startSession();
+//   session.startTransaction();
+//   try {
+//       const restockRequest = await RestockRequest.findById(id).session(session);
+//       if (!restockRequest) throw new Error('Restock request not found');
+
+//       const itemToUpdate = restockRequest.requestedItems.find(item => item.tile.toString() === tileId);
+//       if (!itemToUpdate) throw new Error('Tile not found in this restock request');
+
+//       // This is the key transaction:
+//       // 1. Decrease the 'promised' restocking stock.
+//       // 2. Increase the 'physical' available stock.
+//       await Tile.findByIdAndUpdate(
+//           tileId,
+//           {
+//               $inc: {
+//                   'stockDetails.availableStock': numQuantity,
+//                   'stockDetails.restockingStock': -numQuantity,
+//               },
+//           },
+//           { session, new: true, runValidators: true }
+//       );
+
+//       itemToUpdate.quantityArrived += numQuantity;
+//       itemToUpdate.arrivalHistory.push({ quantity: numQuantity, notes, arrivalDate: new Date() });
+
+//       const totalRequested = restockRequest.requestedItems.reduce((acc, item) => acc + item.quantityRequested, 0);
+//       const totalArrived = restockRequest.requestedItems.reduce((acc, item) => acc + item.quantityArrived, 0);
+
+//       if (totalArrived >= totalRequested) {
+//           restockRequest.status = 'Completed';
+//           restockRequest.completedAt = Date.now();
+//       } else {
+//           restockRequest.status = 'Partially Arrived';
+//       }
+
+//       await restockRequest.save({ session });
+//       await session.commitTransaction();
+//       res.status(200).json(restockRequest);
+//   } catch (error) {
+//       await session.abortTransaction();
+//       res.status(400).json({ message: error.message || 'Failed to record arrival' });
+//   } finally {
+//       session.endSession();
+//   }
+// });
+// ... inside backend/src/controllers/restockController.js
+
+// =================================================================
+// RECORD ARRIVAL: Correctly moves stock from 'restocking' to 'available'.
+// =================================================================
 export const recordArrival = asyncHandler(async (req, res) => {
   const { tileId, quantity, notes } = req.body;
+  const numQuantity = parseInt(quantity, 10);
+  if (isNaN(numQuantity) || numQuantity <= 0) {
+      throw new Error('A valid, positive quantity is required.');
+  }
   const { id } = req.params;
 
   const session = await mongoose.startSession();
   session.startTransaction();
-
   try {
-    const restockRequest = await RestockRequest.findById(id).session(session);
-    if (!restockRequest) throw new Error('Restock request not found');
+      const restockRequest = await RestockRequest.findById(id).session(session);
+      if (!restockRequest) throw new Error('Restock request not found');
 
-    const itemToUpdate = restockRequest.requestedItems.find(item => item.tile.toString() === tileId);
-    if (!itemToUpdate) throw new Error('Tile not found in this restock request');
+      const itemToUpdate = restockRequest.requestedItems.find(item => item.tile.toString() === tileId);
+      if (!itemToUpdate) throw new Error('Tile not found in this restock request');
 
-    // Update stock levels: increase physical stock, decrease restocking promise
-    await Tile.findByIdAndUpdate(
-      tileId,
-      {
-        $inc: {
-          'stockDetails.availableStock': quantity,
-          'stockDetails.restockingStock': -quantity,
-        },
-      },
-      { session }
-    );
+      // --- NEW, CRITICAL VALIDATION ---
+      const remainingQty = itemToUpdate.quantityRequested - itemToUpdate.quantityArrived;
+      if (numQuantity > remainingQty) {
+          throw new Error(`Cannot record arrival of ${numQuantity} boxes. Only ${remainingQty} boxes are remaining for this tile.`);
+      }
+      // --- END OF VALIDATION ---
 
-    // Update the requested item's arrival details
-    itemToUpdate.quantityArrived += quantity;
-    itemToUpdate.arrivalHistory.push({ quantity, notes });
+      // This is the key transaction:
+      // 1. Decrease the 'promised' restocking stock.
+      // 2. Increase the 'physical' available stock.
+      await Tile.findByIdAndUpdate(
+          tileId,
+          {
+              $inc: {
+                  'stockDetails.availableStock': numQuantity,
+                  'stockDetails.restockingStock': -numQuantity,
+              },
+          },
+          { session, new: true, runValidators: true }
+      );
 
-    // Update overall request status
-    const totalRequested = restockRequest.requestedItems.reduce((acc, item) => acc + item.quantityRequested, 0);
-    const totalArrived = restockRequest.requestedItems.reduce((acc, item) => acc + item.quantityArrived, 0);
+      itemToUpdate.quantityArrived += numQuantity;
+      itemToUpdate.arrivalHistory.push({ quantity: numQuantity, notes, arrivalDate: new Date() });
 
-    if (totalArrived >= totalRequested) {
-      restockRequest.status = 'Completed';
-      restockRequest.completedAt = Date.now();
-    } else {
-      restockRequest.status = 'Partially Arrived';
-    }
+      const totalRequested = restockRequest.requestedItems.reduce((acc, item) => acc + item.quantityRequested, 0);
+      const totalArrived = restockRequest.requestedItems.reduce((acc, item) => acc + item.quantityArrived, 0);
 
-    await restockRequest.save({ session });
-    await session.commitTransaction();
-    res.status(200).json(restockRequest);
+      if (totalArrived >= totalRequested) {
+          restockRequest.status = 'Completed';
+          restockRequest.completedAt = Date.now();
+      } else {
+          restockRequest.status = 'Partially Arrived';
+      }
 
+      await restockRequest.save({ session });
+      await session.commitTransaction();
+      res.status(200).json(restockRequest);
   } catch (error) {
-    await session.abortTransaction();
-    res.status(400);
-    throw new Error(error.message || 'Failed to record arrival');
+      await session.abortTransaction();
+      // Use 400 for validation errors, 500 for others
+      const statusCode = error.message.includes('Cannot record arrival') ? 400 : 500;
+      res.status(statusCode).json({ message: error.message || 'Failed to record arrival' });
   } finally {
-    session.endSession();
+      session.endSession();
   }
 });
+
 
 // @desc    Update restock request status (e.g., to 'Processing' or 'Cancelled')
 // @route   PATCH /api/restocks/:id/status
 export const updateRestockRequestStatus = asyncHandler(async (req, res) => {
-    const { status } = req.body;
-    const request = await RestockRequest.findById(req.params.id);
+  const { status } = req.body;
+  const request = await RestockRequest.findById(req.params.id);
+  if (!request) throw new Error('Request not found');
 
-    if (!request) {
-        res.status(404);
-        throw new Error('Request not found');
-    }
-
-    // Handle cancellation: revert the 'restocking' promise for any outstanding items
-    if (status === 'Cancelled' && request.status !== 'Completed') {
-        const session = await mongoose.startSession();
-        session.startTransaction();
-        try {
-            for (const item of request.requestedItems) {
-                const remainingRestockQty = item.quantityRequested - item.quantityArrived;
-                if (remainingRestockQty > 0) {
-                    await Tile.findByIdAndUpdate(item.tile, {
-                        $inc: { 'stockDetails.restockingStock': -remainingRestockQty }
-                    }, { session });
-                }
-            }
-            request.status = status;
-            await request.save({ session });
-            await session.commitTransaction();
-        } catch(error) {
-            await session.abortTransaction();
-            throw new Error('Failed to cancel request and revert stock.');
-        } finally {
-            session.endSession();
-        }
-    } else {
-        request.status = status;
-        await request.save();
-    }
-
-    res.status(200).json(request);
+  if (status === 'Cancelled' && request.status !== 'Completed' && request.status !== 'Cancelled') {
+      const session = await mongoose.startSession();
+      session.startTransaction();
+      try {
+          await revertOutstandingStock(request, session);
+          request.status = 'Cancelled';
+          await request.save({ session });
+          await session.commitTransaction();
+      } catch (error) {
+          await session.abortTransaction();
+          throw new Error('Failed to cancel request and revert stock.');
+      } finally {
+          session.endSession();
+      }
+  } else {
+      request.status = status;
+      await request.save();
+  }
+  res.status(200).json(request);
 });
+
 
 
 export const updateShippedQuantity = asyncHandler(async (req, res) => {
@@ -214,39 +304,43 @@ export const editRestockRequest = asyncHandler(async (req, res) => {
 
   const session = await mongoose.startSession();
   session.startTransaction();
-
   try {
-      const request = await RestockRequest.findById(id).session(session);
-      if (!request) throw new Error('Restock request not found.');
-      if (request.status !== 'Pending') {
-          throw new Error(`Cannot edit a request with status '${request.status}'.`);
+      const originalRequest = await RestockRequest.findById(id).session(session);
+      if (!originalRequest) throw new Error('Restock request not found.');
+      if (originalRequest.status !== 'Pending') {
+          throw new Error(`Cannot edit a request with status '${originalRequest.status}'.`);
       }
 
-      // --- Stock Difference Calculation ---
       const stockAdjustments = new Map();
-      // 1. Revert old quantities
-      for (const item of request.requestedItems) {
-          stockAdjustments.set(item.tile.toString(), (stockAdjustments.get(item.tile.toString()) || 0) - item.quantityRequested);
-      }
-      // 2. Apply new quantities
-      for (const item of requestedItems) {
-          stockAdjustments.set(item.tile.toString(), (stockAdjustments.get(item.tile.toString()) || 0) + item.quantity);
+
+      // 1. Calculate what needs to be *reverted* from the old request
+      for (const oldItem of originalRequest.requestedItems) {
+          const tileId = oldItem.tile.toString();
+          stockAdjustments.set(tileId, (stockAdjustments.get(tileId) || 0) - oldItem.quantityRequested);
       }
 
-      // 3. Apply the final differences to Tile.restockingStock
+      // 2. Calculate what needs to be *applied* from the new request
+      for (const newItem of requestedItems) {
+          const tileId = newItem.tile.toString();
+          stockAdjustments.set(tileId, (stockAdjustments.get(tileId) || 0) + newItem.quantityRequested);
+      }
+
+      // 3. Apply the final net difference to the database
       for (const [tileId, adjustment] of stockAdjustments.entries()) {
           if (adjustment === 0) continue;
-          await Tile.findByIdAndUpdate(tileId, { $inc: { 'stockDetails.restockingStock': adjustment } }, { session });
+          await Tile.findByIdAndUpdate(
+              tileId,
+              { $inc: { 'stockDetails.restockingStock': adjustment } },
+              { session, new: true, runValidators: true }
+          );
       }
-      // --- End of Stock Logic ---
 
-      request.requestedItems = requestedItems;
-      request.notes = notes;
-      const updatedRequest = await request.save({ session });
+      originalRequest.requestedItems = requestedItems;
+      originalRequest.notes = notes;
+      const updatedRequest = await originalRequest.save({ session });
 
       await session.commitTransaction();
       res.status(200).json(updatedRequest);
-
   } catch (error) {
       await session.abortTransaction();
       res.status(400).json({ message: error.message || 'Failed to edit restock request.' });
@@ -260,33 +354,18 @@ export const forceCompleteRequest = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const session = await mongoose.startSession();
   session.startTransaction();
-
   try {
       const request = await RestockRequest.findById(id).session(session);
       if (!request) throw new Error('Restock request not found.');
-      if (request.status === 'Completed' || request.status === 'Cancelled') {
+      if (['Completed', 'Cancelled'].includes(request.status)) {
           throw new Error(`Request is already in a final state ('${request.status}').`);
       }
-
-      // For every item, calculate the outstanding 'restocking' quantity and remove it.
-      for (const item of request.requestedItems) {
-          const outstandingQty = item.quantityRequested - item.quantityArrived;
-          if (outstandingQty > 0) {
-              await Tile.findByIdAndUpdate(
-                  item.tile,
-                  { $inc: { 'stockDetails.restockingStock': -outstandingQty } },
-                  { session }
-              );
-          }
-      }
-
+      await revertOutstandingStock(request, session);
       request.status = 'Completed with Discrepancy';
       request.completedAt = new Date();
       await request.save({ session });
-
       await session.commitTransaction();
       res.status(200).json(request);
-
   } catch (error) {
       await session.abortTransaction();
       res.status(400).json({ message: error.message || 'Failed to force complete request.' });
@@ -298,16 +377,14 @@ export const forceCompleteRequest = asyncHandler(async (req, res) => {
 
 export const editArrivalHistory = asyncHandler(async (req, res) => {
   const { itemId, arrivalId, newQuantity, newNotes } = req.body;
-  const { id } = req.params;
-
-  if (newQuantity === undefined || newQuantity < 0) {
-      res.status(400);
-      throw new Error('A valid new quantity is required.');
+  const numNewQuantity = parseInt(newQuantity, 10);
+  if (isNaN(numNewQuantity) || numNewQuantity < 0) {
+      throw new Error('A valid, non-negative quantity is required.');
   }
+  const { id } = req.params;
 
   const session = await mongoose.startSession();
   session.startTransaction();
-
   try {
       const request = await RestockRequest.findById(id).session(session);
       if (!request) throw new Error('Restock request not found.');
@@ -318,36 +395,27 @@ export const editArrivalHistory = asyncHandler(async (req, res) => {
       const arrival = item.arrivalHistory.id(arrivalId);
       if (!arrival) throw new Error('Arrival record not found.');
 
-      // --- Core Stock Logic ---
-      // 1. Calculate the difference between the old and new quantity.
       const oldQuantity = arrival.quantity;
-      const quantityDifference = newQuantity - oldQuantity;
+      const quantityDifference = numNewQuantity - oldQuantity;
 
-      // 2. Update the tile's main stock with this difference.
-      // If new quantity is 12 and old was 10, difference is +2. availableStock increases by 2.
-      // If new quantity is 8 and old was 10, difference is -2. availableStock decreases by 2.
       if (quantityDifference !== 0) {
+          // Adjust physical stock
           await Tile.findByIdAndUpdate(
               item.tile,
               { $inc: { 'stockDetails.availableStock': quantityDifference } },
-              { session }
+              { session, new: true, runValidators: true }
           );
+          // Adjust the total arrived quantity for the item
+          item.quantityArrived += quantityDifference;
       }
-      
-      // 3. Update the restock request's total arrived quantity.
-      item.quantityArrived += quantityDifference;
-      // --- End of Stock Logic ---
 
-      // 4. Update the actual arrival history entry.
-      arrival.quantity = newQuantity;
-      arrival.notes = newNotes;
-      arrival.arrivalDate = new Date(); // Optionally update the date to reflect the edit time
+      arrival.quantity = numNewQuantity;
+      arrival.notes = newNotes || '';
+      arrival.arrivalDate = new Date();
 
       await request.save({ session });
       await session.commitTransaction();
-
       res.status(200).json(request);
-
   } catch (error) {
       await session.abortTransaction();
       res.status(400).json({ message: error.message || 'Failed to edit arrival history.' });
@@ -355,3 +423,18 @@ export const editArrivalHistory = asyncHandler(async (req, res) => {
       session.endSession();
   }
 });
+
+const revertOutstandingStock = async (request, session) => {
+  for (const item of request.requestedItems) {
+      const outstandingQty = item.quantityRequested - item.quantityArrived;
+      if (outstandingQty > 0) {
+          await Tile.findByIdAndUpdate(
+              item.tile,
+              { $inc: { 'stockDetails.restockingStock': -outstandingQty } },
+              { session, new: true, runValidators: true }
+          );
+      }
+  }
+};
+
+

@@ -43,7 +43,7 @@ import { protect, authorize } from '../middleware/authMiddleware.js';
 import upload from '../config/cloudinary.js'; // <-- THIS IS THE FIX: Import the upload config
 
 const router = express.Router();
-router.use(protect, authorize('admin', 'dubai-staff', 'salesman'));
+router.use(protect, authorize('admin', 'dubai-staff', 'salesman','labor'));
 
 router.route('/')
   .get(getAllBookings)
@@ -51,7 +51,7 @@ router.route('/')
 
 router.route('/:id')
   .get(getBookingById)
-  .put(authorize('admin', 'dubai-staff'), updateBooking)
+  .put(authorize('admin', 'dubai-staff','labor'), updateBooking)
   .delete(authorize('admin'), deleteBooking);
 
 router.route('/:id/cancel')
