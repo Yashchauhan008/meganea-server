@@ -4,6 +4,9 @@ import DispatchOrder from '../models/dispatchOrderModel.js';
 import Company from '../models/companyModel.js';
 import RestockRequest from '../models/restockRequestModel.js';
 import Tile from '../models/tileModel.js';
+import PurchaseOrder from '../models/purchaseOrderModel.js';
+import Pallet from '../models/palletModel.js';
+import LoadingPlan from '../models/loadingPlanModel.js';
 
 const generateId = async (prefix) => {
   let model;
@@ -16,6 +19,9 @@ const generateId = async (prefix) => {
     case 'PT': model = Company; modelName = 'Company'; idFieldName = 'companyId'; break;
     case 'RQ': model = RestockRequest; modelName = 'RestockRequest'; idFieldName = 'requestId'; break;
     case 'TL': model = Tile; modelName = 'Tile'; idFieldName = 'tileId'; break;
+    case 'PO': model = PurchaseOrder; idFieldName = 'poId'; break;
+    case 'PA': model = Pallet; idFieldName = 'palletId'; break;
+    case 'LP': model = LoadingPlan; idFieldName = 'planId'; break;
     default: throw new Error('Invalid prefix for ID generation');
   }
 

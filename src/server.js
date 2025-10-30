@@ -66,6 +66,9 @@ import restockRoutes from './routes/restockRoutes.js';
 import uploadRoutes from './routes/uploadRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js'; // <-- ADD THIS
 
+import factoryRoutes from './routes/factoryRoutes.js';
+import purchaseOrderRoutes from './routes/purchaseOrderRoutes.js';
+
 import asyncHandler from './utils/asyncHandler.js';
 
 dotenv.config();
@@ -92,6 +95,10 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/dispatches', dispatchRoutes);
 app.use('/api/restocks', restockRoutes);
 app.use('/api/dashboard', dashboardRoutes); // <-- ADD THIS
+
+app.use('/api/factories', factoryRoutes);
+app.use('/api/purchase-orders', purchaseOrderRoutes);
+
 
 // --- THIS IS THE CORRECTED ROUTE ---
 // It now correctly uses the plural '/uploads' to match the frontend.
