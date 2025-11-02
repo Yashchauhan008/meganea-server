@@ -105,6 +105,11 @@ const tileSchema = new mongoose.Schema({
     restockingStock: { type: Number, default: 0, min: 0 },
   },
 
+  manufacturingFactories: [{ 
+    type: mongoose.Schema.Types.ObjectId, 
+    ref: 'Factory' 
+}],
+
   isActive: { type: Boolean, default: true },
   createdBy: { 
     type: mongoose.Schema.Types.ObjectId, 

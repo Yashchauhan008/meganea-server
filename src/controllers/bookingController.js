@@ -263,3 +263,60 @@ export const addUnprocessedImages = asyncHandler(async (req, res) => {
 
   res.status(200).json(booking);
 });
+
+/**
+ * @desc    Delete a single unprocessed image from a booking
+ * @route   DELETE /api/bookings/:bookingId/unprocessed-images/:imageId
+ * @access  Private (Owner, Admin, Dubai-Staff)
+ */
+export const deleteUnprocessedImage = asyncHandler(async (req, res) => {
+  const { bookingId, imageId } = req.params;
+  const userId = req.user._id;
+  const userRole = req.user.role;
+
+  const booking = await Booking.findById(bookingId);
+
+  if (!booking) {
+    res.status(404);
+    throw new Error('Booking not found');
+  }
+
+  const imageToDelete = booking.unprocessedImages.id(imageId);
+
+  if (!imageToDelete) {
+    res.status(404);
+    throw new Error('Image not found in this booking');
+  }
+
+  // --- SECURITY CHECK ---
+  // Allow deletion if:
+  // 1. The user is an 'admin' or 'dubai-staff'.
+  // 2. The user is the one who originally uploaded the image.
+  const isOwner = imageToDelete.uploadedBy && imageToDelete.uploadedBy.toString() === userId.toString();
+  const isAdminOrStaff = userRole === 'admin' || userRole === 'dubai-staff';
+
+  if (!isOwner && !isAdminOrStaff) {
+    res.status(403); // Forbidden
+    throw new Error('You are not authorized to delete this note.');
+  }
+
+  // Proceed with deletion
+  try {
+    // 1. Delete the image from Cloudinary to save space
+    if (imageToDelete.publicId) {
+      await cloudinary.uploader.destroy(imageToDelete.publicId);
+    }
+
+    // 2. Remove the image sub-document from the booking's array
+    booking.unprocessedImages.pull(imageId);
+    
+    // 3. Save the parent booking document
+    await booking.save();
+
+    res.status(200).json({ message: 'Delivery note deleted successfully.' });
+
+  } catch (error) {
+    res.status(500);
+    throw new Error('Failed to delete the delivery note. Please try again.');
+  }
+});

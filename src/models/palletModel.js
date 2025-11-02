@@ -4,7 +4,7 @@ import { generateId } from '../services/idGenerator.js'; // Assuming you'll add 
 const palletSchema = new mongoose.Schema({
     palletId: { type: String, required: true, unique: true },
     factory: { type: mongoose.Schema.Types.ObjectId, ref: 'Factory', required: true },
-    tile: { type: mongoose.Schema.Types.ObjectId, ref: 'IndiaTile', required: true },
+    tile: { type: mongoose.Schema.Types.ObjectId, ref: 'Tile', required: true }, // Changed from 'IndiaTile' to 'Tile'
     type: { type: String, enum: ['Pallet', 'Khatli'], required: true },
     boxCount: { type: Number, required: true },
     status: {

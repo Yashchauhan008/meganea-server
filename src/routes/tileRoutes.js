@@ -5,7 +5,8 @@ import {
   getTileById,
   updateTile,
   deleteTile,
-  getTilesForBooking
+  getTilesForBooking,
+  getUniqueTileSizes
 } from '../controllers/tileController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
@@ -15,6 +16,7 @@ const router = express.Router();
 // Define the most specific routes FIRST.
 router.route('/for-booking').get(getTilesForBooking);
 // ---------------------
+router.route('/sizes').get(protect, getUniqueTileSizes);
 
 // Now define the general routes.
 router.route('/')

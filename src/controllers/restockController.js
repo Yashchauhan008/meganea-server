@@ -437,4 +437,26 @@ const revertOutstandingStock = async (request, session) => {
   }
 };
 
-
+export const getRestockRequestForWorkbench = asyncHandler(async (req, res) => {
+    const request = await RestockRequest.findById(req.params.id)
+      .populate('requestedBy', 'username')
+      .populate({
+        path: 'requestedItems.tile',
+        model: 'Tile',
+        populate: { path: 'manufacturingFactories', model: 'Factory', select: 'name' }
+      })
+      // --- THIS IS THE KEY CHANGE ---
+      // Populate the PO reference on each item, and then populate the PO's details.
+      .populate({
+        path: 'requestedItems.purchaseOrder',
+        model: 'PurchaseOrder',
+        select: 'poId' // We only need the human-readable PO ID for the UI
+      });
+      // -----------------------------
+  
+    if (!request) {
+      res.status(404).throw(new Error('Restock request not found'));
+    }
+    
+    res.status(200).json(request);
+  });

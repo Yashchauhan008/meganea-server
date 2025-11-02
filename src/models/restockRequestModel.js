@@ -12,6 +12,11 @@ const requestedItemSchema = new mongoose.Schema({
   quantityShipped: { type: Number, default: 0 },
   quantityArrived: { type: Number, default: 0 },
   arrivalHistory: [arrivalHistorySchema],
+  purchaseOrder: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PurchaseOrder',
+    default: null // It starts as null and gets assigned when a PO is created.
+  }
 });
 
 const restockRequestSchema = new mongoose.Schema({

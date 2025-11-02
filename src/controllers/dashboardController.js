@@ -14,11 +14,17 @@ export const getDashboardData = asyncHandler(async (req, res) => {
 
     // --- Admin & Dubai Staff Dashboard Data ---
     if (role === 'admin' || role === 'dubai-staff') {
-        const pendingInvoices = await DispatchOrder.countDocuments({ deliveryNoteImage: { $in: [null, ''] } });
+        // --- THIS IS THE CORRECTED LOGIC FOR PENDING INVOICES ---
+        // It now counts dispatch orders where the invoiceNumber is null, undefined, or an empty string.
+        const pendingInvoices = await DispatchOrder.countDocuments({ 
+            invoiceNumber: { $in: [null, ''] } 
+        });
+        // --- END OF CORRECTION ---
+
         const pendingBookings = await Booking.countDocuments({ status: 'Pending' });
 
         const [kpiData, stockAlerts, bookingActivity, topSalesmen, topTiles] = await Promise.all([
-            Booking.aggregate([ { $facet: { "activeBookings": [ { $match: { status: { $in: ['Confirmed', 'Partially Dispatched'] } } }, { $count: "count" } ] } }, { $project: { activeBookings: { $ifNull: [{ $arrayElemAt: ["$activeBookings.count", 0] }, 0] } } } ]),
+            Booking.aggregate([ { $facet: { "activeBookings": [ { $match: { status: { $in: ['Confirmed', 'Partially Dispatched'] } } }, { $count: "count" } ] } }, { $project: { activeBookactions: { $ifNull: [{ $arrayElemAt: ["$activeBookings.count", 0] }, 0] } } } ]),
             Tile.find({ $or: [ { $expr: { $gt: ['$stockDetails.bookedStock', '$stockDetails.availableStock'] } }, { $expr: { $lte: ['$stockDetails.availableStock', '$restockThreshold'] } } ] }).limit(10).select('name stockDetails restockThreshold'),
             Booking.aggregate([ { $match: { createdAt: { $gte: new Date(new Date().setDate(new Date().getDate() - 30)) } } }, { $group: { _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } }, count: { $sum: 1 } } }, { $sort: { _id: 1 } } ]),
             Booking.aggregate([ { $match: { status: { $ne: 'Cancelled' } } }, { $group: { _id: "$salesman", count: { $sum: 1 } } }, { $sort: { count: -1 } }, { $limit: 5 }, { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'salesmanInfo' } }, { $unwind: '$salesmanInfo' }, { $project: { name: '$salesmanInfo.username', count: 1 } } ]),
@@ -32,8 +38,8 @@ export const getDashboardData = asyncHandler(async (req, res) => {
             totalTiles,
             pendingRestocks,
             activeBookings: kpiData[0]?.activeBookings || 0,
-            pendingInvoices,
-            pendingBookings, // Specific for Dubai Staff
+            pendingInvoices, // This now holds the correct count
+            pendingBookings,
             stockAlerts,
             bookingActivity,
             topSalesmen,

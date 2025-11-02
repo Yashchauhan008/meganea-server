@@ -2,8 +2,10 @@ import mongoose from 'mongoose';
 import { generateId } from '../services/idGenerator.js'; // Assuming you'll add 'PO' to your generator
 
 const poItemSchema = new mongoose.Schema({
-    tile: { type: mongoose.Schema.Types.ObjectId, ref: 'IndiaTile', required: true },
-    palletsOrdered: { type: Number, required: true, default: 0 },
+    manufacturingFactories: [{ 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'Factory' 
+    }],    palletsOrdered: { type: Number, required: true, default: 0 },
     khatlisOrdered: { type: Number, required: true, default: 0 },
     totalBoxesOrdered: { type: Number },
     quantityPassedQC: { type: Number, default: 0 },

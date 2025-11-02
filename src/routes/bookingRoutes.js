@@ -37,7 +37,8 @@ import {
   updateBooking,
   deleteBooking,
   cancelBooking,
-  addUnprocessedImages, // The renamed controller for uploads
+  addUnprocessedImages,
+  deleteUnprocessedImage, // The renamed controller for uploads
 } from '../controllers/bookingController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 import upload from '../config/cloudinary.js'; // <-- THIS IS THE FIX: Import the upload config
@@ -65,6 +66,11 @@ router.post(
   authorize('admin', 'dubai-staff', 'labor'),
   upload.array('images', 5), // 'images' is the field name, 5 is the max file count
   addUnprocessedImages
+);
+
+router.delete(
+  '/:bookingId/unprocessed-images/:imageId',
+  deleteUnprocessedImage
 );
 
 export default router;
