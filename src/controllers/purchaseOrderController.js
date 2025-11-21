@@ -231,3 +231,59 @@ export const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
 
     res.status(200).json(populatedPO);
 });
+
+
+export const recordQC = asyncHandler(async (req, res) => {
+    const { poId, itemId } = req.params;
+    const { quantityChecked, quantityPassed, quantityFailed, notes } = req.body;
+    const userId = req.user._id;
+
+    // --- 1. Basic Validation ---
+    if (quantityPassed + quantityFailed !== quantityChecked) {
+        res.status(400);
+        throw new Error('Passed quantity and Failed quantity must sum up to the Checked quantity.');
+    }
+
+    const po = await PurchaseOrder.findById(poId);
+    if (!po) {
+        res.status(404);
+        throw new Error('Purchase Order not found.');
+    }
+
+    // --- 2. Find the specific item within the PO's items array ---
+    const item = po.items.id(itemId);
+    if (!item) {
+        res.status(404);
+        throw new Error('Item not found in this Purchase Order.');
+    }
+
+    // --- 3. Add the new QC record to the history ---
+    item.qcHistory.push({
+        quantityChecked,
+        quantityPassed,
+        quantityFailed,
+        notes,
+        checkedBy: userId,
+    });
+
+    // --- 4. Update the total passed quantity for that item ---
+    item.quantityPassedQC += quantityPassed;
+
+    // --- 5. Update the overall PO status ---
+    // If this is the first QC record, move the status to In Progress
+    if (po.status === 'Manufacturing') {
+        po.status = 'QC_InProgress';
+    }
+
+    // --- 6. Save the changes to the database ---
+    await po.save();
+
+    // --- 7. Send back the fully populated PO for the UI to update ---
+    const populatedPO = await PurchaseOrder.findById(po._id)
+        .populate('factory', 'name')
+        .populate('createdBy', 'username')
+        .populate({ path: 'sourceRestockRequest', select: 'requestId' })
+        .populate({ path: 'items.tile', select: 'name' });
+
+    res.status(200).json(populatedPO);
+});

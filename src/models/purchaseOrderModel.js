@@ -3,42 +3,42 @@
 import mongoose from 'mongoose';
 import { generateId } from '../services/idGenerator.js';
 
-// This schema defines the structure for EACH item within the PO's 'items' array.
+const qcHistorySchema = new mongoose.Schema({
+    quantityChecked: { type: Number, required: true },
+    quantityPassed: { type: Number, required: true },
+    quantityFailed: { type: Number, required: true },
+    qcDate: { type: Date, default: Date.now },
+    checkedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    notes: { type: String },
+});
+
+// --- THIS IS THE FIX ---
+// The `{ _id: false }` option has been removed.
+// Mongoose will now automatically assign a unique _id to each item in the PO.
 const poItemSchema = new mongoose.Schema({
     tile: { 
         type: mongoose.Schema.Types.ObjectId, 
-        ref: 'Tile', // This should reference the main 'Tile' model
+        ref: 'Tile',
         required: true 
     },
     palletsOrdered: { type: Number, required: true, default: 0 },
     khatlisOrdered: { type: Number, required: true, default: 0 },
-    totalBoxesOrdered: { type: Number }, // This will be calculated
+    totalBoxesOrdered: { type: Number },
     quantityPassedQC: { type: Number, default: 0 },
-    qcHistory: [{
-        quantityChecked: { type: Number, required: true },
-        quantityPassed: { type: Number, required: true },
-        quantityFailed: { type: Number, required: true },
-        qcDate: { type: Date, default: Date.now },
-        checkedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-        notes: { type: String },
-    }],
-}, { _id: false }); // Using _id: false because these are sub-documents
+    qcHistory: [qcHistorySchema],
+});
+// --------------------
 
 const purchaseOrderSchema = new mongoose.Schema({
     poId: { type: String, required: true, unique: true },
-    sourceRestockRequest: { type: mongoose.Schema.Types.ObjectId, ref: 'RestockRequest' }, // Can be null if PO is created manually
+    sourceRestockRequest: { type: mongoose.Schema.Types.ObjectId, ref: 'RestockRequest' },
     factory: { type: mongoose.Schema.Types.ObjectId, ref: 'Factory', required: true },
     packingRules: {
         boxesPerPallet: { type: Number, required: true },
         boxesPerKhatli: { type: Number, required: true },
         palletsPerContainer: { type: Number, required: true },
     },
-    
-    // --- THIS IS THE CORRECTED SCHEMA DEFINITION ---
-    // The 'items' field is an array that uses the structure defined in poItemSchema.
     items: [poItemSchema],
-    // ---------------------------------------------
-
     status: {
         type: String,
         enum: ['Draft', 'SentToFactory', 'Manufacturing', 'QC_InProgress', 'QC_Completed', 'Packing', 'Completed', 'Cancelled'],
@@ -48,7 +48,7 @@ const purchaseOrderSchema = new mongoose.Schema({
     notes: { type: String },
 }, { timestamps: true });
 
-// Pre-save hook to calculate total boxes for each item
+// Pre-save hook to calculate total boxes (no changes here)
 purchaseOrderSchema.pre('save', function(next) {
     if (this.isModified('items') || this.isModified('packingRules')) {
         this.items.forEach(item => {
@@ -60,7 +60,7 @@ purchaseOrderSchema.pre('save', function(next) {
     next();
 });
 
-// Pre-validate hook to generate ID
+// Pre-validate hook to generate PO ID (no changes here)
 purchaseOrderSchema.pre('validate', async function(next) {
     if (this.isNew && !this.poId) {
         this.poId = await generateId('PO');

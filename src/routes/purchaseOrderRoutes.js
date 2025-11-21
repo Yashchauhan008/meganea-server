@@ -5,8 +5,9 @@ import {
     createPurchaseOrder, 
     getAllPurchaseOrders,
     getPurchaseOrderById,
+    updatePurchaseOrderStatus,
     // --- 1. IMPORT THE NEW CONTROLLER ---
-    updatePurchaseOrderStatus
+    recordQC
 } from '../controllers/purchaseOrderController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
@@ -18,8 +19,11 @@ router.route('/')
     .post(createPurchaseOrder)
     .get(getAllPurchaseOrders);
 
-// --- 2. ADD THE NEW STATUS ROUTE ---
-// It's a PATCH request because we are partially updating the document.
+// --- 2. ADD THE NEW QC ROUTE ---
+// This is a nested route for a specific item within a specific PO
+router.route('/:poId/items/:itemId/qc')
+    .post(recordQC);
+
 router.route('/:id/status')
     .patch(updatePurchaseOrderStatus);
 
