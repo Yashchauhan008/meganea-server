@@ -1,11 +1,9 @@
 import mongoose from 'mongoose';
-import { generateId } from '../services/idGenerator.js'; // Assuming you'll add 'PO' to your generator
+import { generateId } from '../services/idGenerator.js';
 
+// This schema is now back to its original state, WITHOUT the 'tile' field.
 const poItemSchema = new mongoose.Schema({
-    manufacturingFactories: [{ 
-        type: mongoose.Schema.Types.ObjectId, 
-        ref: 'Factory' 
-    }],    palletsOrdered: { type: Number, required: true, default: 0 },
+    palletsOrdered: { type: Number, required: true, default: 0 },
     khatlisOrdered: { type: Number, required: true, default: 0 },
     totalBoxesOrdered: { type: Number },
     quantityPassedQC: { type: Number, default: 0 },
@@ -28,6 +26,7 @@ const purchaseOrderSchema = new mongoose.Schema({
         boxesPerKhatli: { type: Number, required: true },
         palletsPerContainer: { type: Number, required: true },
     },
+    // This 'items' array now correctly uses the reverted poItemSchema
     items: [poItemSchema],
     status: {
         type: String,
@@ -38,7 +37,7 @@ const purchaseOrderSchema = new mongoose.Schema({
     notes: { type: String },
 }, { timestamps: true });
 
-// Pre-save hook to calculate total boxes ordered
+// ... (pre-save and pre-validate hooks remain the same) ...
 purchaseOrderSchema.pre('save', function(next) {
     if (this.isModified('items') || this.isModified('packingRules')) {
         this.items.forEach(item => {
@@ -50,13 +49,13 @@ purchaseOrderSchema.pre('save', function(next) {
     next();
 });
 
-// Pre-validate hook to generate ID if it doesn't exist
 purchaseOrderSchema.pre('validate', async function(next) {
     if (this.isNew && !this.poId) {
-        this.poId = await generateId('PO'); // Add 'PO' to your idGenerator service
+        this.poId = await generateId('PO');
     }
     next();
 });
+
 
 const PurchaseOrder = mongoose.model('PurchaseOrder', purchaseOrderSchema);
 export default PurchaseOrder;

@@ -9,6 +9,8 @@ import {
   forceCompleteRequest,
   editRestockRequest,
   editArrivalHistory,
+  // --- 1. IMPORT THE NEW CONTROLLER FUNCTION ---
+  getRestockRequestForWorkbench,
 } from '../controllers/restockController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
@@ -22,10 +24,15 @@ router.route('/')
   .post(authorize('admin', 'dubai-staff'), createRestockRequest)
   .get(authorize('admin', 'dubai-staff', 'india-staff'), getAllRestockRequests);
 
+// --- 2. ADD THE SPECIFIC WORKBENCH ROUTE HERE ---
+// This route must come BEFORE the generic '/:id' route.
+router.get('/:id/workbench', authorize('admin', 'india-staff'), getRestockRequestForWorkbench);
+// -------------------------------------------------
+
 // All authorized staff can view a specific request.
 router.route('/:id')
   .get(getRestockRequestById)
-  .put(authorize('admin', 'dubai-staff'), editRestockRequest); // <-- ADD .put()
+  .put(authorize('admin', 'dubai-staff'), editRestockRequest);
 
 // India staff can update the status to 'Processing' or 'Cancelled'. Admins can too.
 router.patch('/:id/status', authorize('admin', 'india-staff'), updateRestockRequestStatus);
@@ -38,8 +45,5 @@ router.patch('/:id/update-shipped', authorize('admin', 'india-staff'), updateShi
 router.patch('/:id/force-complete', authorize('admin'), forceCompleteRequest);
 
 router.patch('/:id/edit-arrival', authorize('admin'), editArrivalHistory);
-
-
-
 
 export default router;
