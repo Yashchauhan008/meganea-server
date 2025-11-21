@@ -1,11 +1,18 @@
+// backend/src/models/purchaseOrderModel.js
+
 import mongoose from 'mongoose';
 import { generateId } from '../services/idGenerator.js';
 
-// This schema is now back to its original state, WITHOUT the 'tile' field.
+// This schema defines the structure for EACH item within the PO's 'items' array.
 const poItemSchema = new mongoose.Schema({
+    tile: { 
+        type: mongoose.Schema.Types.ObjectId, 
+        ref: 'Tile', // This should reference the main 'Tile' model
+        required: true 
+    },
     palletsOrdered: { type: Number, required: true, default: 0 },
     khatlisOrdered: { type: Number, required: true, default: 0 },
-    totalBoxesOrdered: { type: Number },
+    totalBoxesOrdered: { type: Number }, // This will be calculated
     quantityPassedQC: { type: Number, default: 0 },
     qcHistory: [{
         quantityChecked: { type: Number, required: true },
@@ -15,19 +22,23 @@ const poItemSchema = new mongoose.Schema({
         checkedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         notes: { type: String },
     }],
-});
+}, { _id: false }); // Using _id: false because these are sub-documents
 
 const purchaseOrderSchema = new mongoose.Schema({
     poId: { type: String, required: true, unique: true },
-    sourceRestockRequest: { type: mongoose.Schema.Types.ObjectId, ref: 'RestockRequest', required: true },
+    sourceRestockRequest: { type: mongoose.Schema.Types.ObjectId, ref: 'RestockRequest' }, // Can be null if PO is created manually
     factory: { type: mongoose.Schema.Types.ObjectId, ref: 'Factory', required: true },
     packingRules: {
         boxesPerPallet: { type: Number, required: true },
         boxesPerKhatli: { type: Number, required: true },
         palletsPerContainer: { type: Number, required: true },
     },
-    // This 'items' array now correctly uses the reverted poItemSchema
+    
+    // --- THIS IS THE CORRECTED SCHEMA DEFINITION ---
+    // The 'items' field is an array that uses the structure defined in poItemSchema.
     items: [poItemSchema],
+    // ---------------------------------------------
+
     status: {
         type: String,
         enum: ['Draft', 'SentToFactory', 'Manufacturing', 'QC_InProgress', 'QC_Completed', 'Packing', 'Completed', 'Cancelled'],
@@ -37,7 +48,7 @@ const purchaseOrderSchema = new mongoose.Schema({
     notes: { type: String },
 }, { timestamps: true });
 
-// ... (pre-save and pre-validate hooks remain the same) ...
+// Pre-save hook to calculate total boxes for each item
 purchaseOrderSchema.pre('save', function(next) {
     if (this.isModified('items') || this.isModified('packingRules')) {
         this.items.forEach(item => {
@@ -49,13 +60,13 @@ purchaseOrderSchema.pre('save', function(next) {
     next();
 });
 
+// Pre-validate hook to generate ID
 purchaseOrderSchema.pre('validate', async function(next) {
     if (this.isNew && !this.poId) {
         this.poId = await generateId('PO');
     }
     next();
 });
-
 
 const PurchaseOrder = mongoose.model('PurchaseOrder', purchaseOrderSchema);
 export default PurchaseOrder;

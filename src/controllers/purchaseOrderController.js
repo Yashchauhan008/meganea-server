@@ -22,7 +22,6 @@ export const createPurchaseOrder = asyncHandler(async (req, res) => {
 
     const session = await mongoose.startSession();
     let savedPO;
-    // --- STEP 1: Define a variable to hold our updated request ---
     let finalRestockRequest; 
 
     try {
@@ -37,6 +36,7 @@ export const createPurchaseOrder = asyncHandler(async (req, res) => {
 
             if (totalBoxes <= 0) throw new Error(`Order for a tile must contain at least one box.`);
 
+            // This logic remains correct: we are increasing the "restocking" count by the amount ordered.
             await Tile.findByIdAndUpdate(
                 item.tileId,
                 { $inc: { 'stockDetails.restockingStock': totalBoxes } },
@@ -73,17 +73,23 @@ export const createPurchaseOrder = asyncHandler(async (req, res) => {
                         const boxesFromKhatlis = (poItem.khatlisOrdered || 0) * (savedPO.packingRules.boxesPerKhatli || 0);
                         const totalBoxesInThisPO = boxesFromPallets + boxesFromKhatlis;
                         
-                        const itemToUpdate = restockRequest.requestedItems[restockItemIndex];
-
-                        if ((itemToUpdate.quantityInPO + totalBoxesInThisPO) > itemToUpdate.quantityRequested) {
-                            throw new Error(`Cannot assign ${totalBoxesInThisPO} boxes. Only ${itemToUpdate.quantityRequested - itemToUpdate.quantityInPO} boxes are pending.`);
-                        }
+                        // --- THIS IS THE MODIFICATION ---
+                        // The validation block that checked for over-assignment has been completely REMOVED.
+                        // We will now simply add the PO quantity to the tracking field, regardless of whether it's more or less.
+                        //
+                        // DELETED CODE BLOCK:
+                        // if ((itemToUpdate.quantityInPO + totalBoxesInThisPO) > itemToUpdate.quantityRequested) {
+                        //     throw new Error(`Cannot assign ${totalBoxesInThisPO} boxes...`);
+                        // }
+                        // ---------------------------------
 
                         restockRequest.requestedItems[restockItemIndex].quantityInPO += totalBoxesInThisPO;
                         restockRequest.requestedItems[restockItemIndex].purchaseOrder = savedPO._id;
                     }
                 }
 
+                // This logic also remains correct. It will mark the request as 'Processing'
+                // if the ordered amount MEETS or EXCEEDS the requested amount.
                 const allItemsFulfilled = restockRequest.requestedItems.every(
                     item => item.quantityInPO >= item.quantityRequested
                 );
@@ -93,7 +99,6 @@ export const createPurchaseOrder = asyncHandler(async (req, res) => {
                 }
                 
                 restockRequest.markModified('requestedItems');
-                // --- STEP 2: Save the final state to our variable ---
                 finalRestockRequest = await restockRequest.save({ session });
             }
         }
@@ -109,25 +114,31 @@ export const createPurchaseOrder = asyncHandler(async (req, res) => {
     
     session.endSession();
 
-    // --- STEP 3: THE FINAL FIX ---
-    // Instead of re-fetching, we populate the object we already have in memory.
     try {
         const populatedPO = await PurchaseOrder.findById(savedPO._id)
             .populate('factory', 'name')
             .populate('items.tile', 'name');
 
-        // Manually populate the `finalRestockRequest` object before sending it.
-        // This is guaranteed to have the correct `quantityInPO` values.
         const responseRestockRequest = await finalRestockRequest.populate([
-            { path: 'requestedItems.tile', select: 'name size manufacturingFactories' },
-            { path: 'requestedItems.purchaseOrder', select: 'poId' }
+            { 
+                path: 'requestedItems.tile', 
+                select: 'name size manufacturingFactories',
+                populate: {
+                    path: 'manufacturingFactories',
+                    model: 'Factory',
+                    select: 'name'
+                }
+            },
+            { 
+                path: 'requestedItems.purchaseOrder', 
+                select: 'poId' 
+            }
         ]);
             
         if (!populatedPO) {
             throw new Error('Purchase Order created but could not be retrieved for response.');
         }
 
-        // Now, we send the correctly populated, up-to-date objects.
         res.status(201).json({
             purchaseOrder: populatedPO,
             restockRequest: responseRestockRequest
@@ -142,7 +153,6 @@ export const createPurchaseOrder = asyncHandler(async (req, res) => {
     }
 });
 
-// This function remains unchanged.
 export const getAllPurchaseOrders = asyncHandler(async (req, res) => {
     const purchaseOrders = await PurchaseOrder.find({})
         .populate('factory', 'name')
@@ -151,7 +161,73 @@ export const getAllPurchaseOrders = asyncHandler(async (req, res) => {
             path: 'sourceRestockRequest',
             select: 'requestId'
         })
+        // This is the crucial addition. It tells Mongoose to look inside the 'items' array
+        // and for each 'tile' field, fetch the corresponding document from the 'Tile' collection
+        // and select only its 'name'.
+        .populate({
+            path: 'items.tile',
+            select: 'name'
+        })
         .sort({ createdAt: -1 });
 
     res.status(200).json(purchaseOrders);
+});
+
+export const getPurchaseOrderById = asyncHandler(async (req, res) => {
+    const po = await PurchaseOrder.findById(req.params.id)
+        .populate('factory', 'name')
+        .populate('createdBy', 'username')
+        .populate({
+            path: 'sourceRestockRequest',
+            select: 'requestId'
+        })
+        .populate({
+            path: 'items.tile',
+            select: 'name'
+        });
+
+    if (!po) {
+        res.status(404);
+        throw new Error('Purchase Order not found');
+    }
+
+    res.status(200).json(po);
+});
+
+
+export const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
+    const { status } = req.body;
+    const { id } = req.params;
+
+    // Basic validation
+    const validStatuses = ['Draft', 'SentToFactory', 'Manufacturing', 'QC_InProgress', 'QC_Completed', 'Packing', 'Completed', 'Cancelled'];
+    if (!status || !validStatuses.includes(status)) {
+        res.status(400);
+        throw new Error('Invalid status provided.');
+    }
+
+    const po = await PurchaseOrder.findById(id);
+
+    if (!po) {
+        res.status(404);
+        throw new Error('Purchase Order not found.');
+    }
+
+    // Add any business logic rules here, e.g., cannot revert from 'Completed'
+    if (po.status === 'Completed' || po.status === 'Cancelled') {
+        res.status(400);
+        throw new Error(`Cannot change status of a PO that is already ${po.status}.`);
+    }
+
+    po.status = status;
+    const updatedPO = await po.save();
+
+    // Populate the response to match what the modal expects
+    const populatedPO = await PurchaseOrder.findById(updatedPO._id)
+        .populate('factory', 'name')
+        .populate('createdBy', 'username')
+        .populate({ path: 'sourceRestockRequest', select: 'requestId' })
+        .populate({ path: 'items.tile', select: 'name' });
+
+    res.status(200).json(populatedPO);
 });
