@@ -12,9 +12,6 @@ const qcHistorySchema = new mongoose.Schema({
     notes: { type: String },
 });
 
-// --- THIS IS THE FIX ---
-// The `{ _id: false }` option has been removed.
-// Mongoose will now automatically assign a unique _id to each item in the PO.
 const poItemSchema = new mongoose.Schema({
     tile: { 
         type: mongoose.Schema.Types.ObjectId, 
@@ -27,7 +24,6 @@ const poItemSchema = new mongoose.Schema({
     quantityPassedQC: { type: Number, default: 0 },
     qcHistory: [qcHistorySchema],
 });
-// --------------------
 
 const purchaseOrderSchema = new mongoose.Schema({
     poId: { type: String, required: true, unique: true },
@@ -39,6 +35,15 @@ const purchaseOrderSchema = new mongoose.Schema({
         palletsPerContainer: { type: Number, required: true },
     },
     items: [poItemSchema],
+    
+    // --- ADD THIS NEW FIELD ---
+    // This will store a reference to all pallets created from this PO.
+    generatedPallets: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Pallet'
+    }],
+    // --------------------------
+
     status: {
         type: String,
         enum: ['Draft', 'SentToFactory', 'Manufacturing', 'QC_InProgress', 'QC_Completed', 'Packing', 'Completed', 'Cancelled'],
@@ -48,7 +53,7 @@ const purchaseOrderSchema = new mongoose.Schema({
     notes: { type: String },
 }, { timestamps: true });
 
-// Pre-save hook to calculate total boxes (no changes here)
+// Pre-save hook (no changes here)
 purchaseOrderSchema.pre('save', function(next) {
     if (this.isModified('items') || this.isModified('packingRules')) {
         this.items.forEach(item => {
@@ -60,7 +65,7 @@ purchaseOrderSchema.pre('save', function(next) {
     next();
 });
 
-// Pre-validate hook to generate PO ID (no changes here)
+// Pre-validate hook (no changes here)
 purchaseOrderSchema.pre('validate', async function(next) {
     if (this.isNew && !this.poId) {
         this.poId = await generateId('PO');

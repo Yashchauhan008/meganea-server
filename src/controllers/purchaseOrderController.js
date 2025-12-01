@@ -5,6 +5,7 @@ import asyncHandler from '../utils/asyncHandler.js';
 import PurchaseOrder from '../models/purchaseOrderModel.js';
 import RestockRequest from '../models/restockRequestModel.js';
 import Tile from '../models/tileModel.js';
+import Pallet from '../models/palletModel.js'; // <-- IMPORT THE NEW PALLET MODEL
 import { generateId } from '../services/idGenerator.js';
 
 export const createPurchaseOrder = asyncHandler(async (req, res) => {
@@ -194,7 +195,6 @@ export const getPurchaseOrderById = asyncHandler(async (req, res) => {
     res.status(200).json(po);
 });
 
-
 export const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
     const { status } = req.body;
     const { id } = req.params;
@@ -231,7 +231,6 @@ export const updatePurchaseOrderStatus = asyncHandler(async (req, res) => {
 
     res.status(200).json(populatedPO);
 });
-
 
 export const recordQC = asyncHandler(async (req, res) => {
     const { poId, itemId } = req.params;
@@ -286,4 +285,83 @@ export const recordQC = asyncHandler(async (req, res) => {
         .populate({ path: 'items.tile', select: 'name' });
 
     res.status(200).json(populatedPO);
+});
+
+export const generatePalletsFromPO = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+        const po = await PurchaseOrder.findById(id).session(session);
+        if (!po) {
+            throw new Error('Purchase Order not found.');
+        }
+
+        // --- Validation ---
+        if (po.status !== 'QC_Completed') {
+            throw new Error(`Cannot generate pallets. PO status is '${po.status}', but must be 'QC_Completed'.`);
+        }
+
+        const allItemsQCPassed = po.items.every(item => item.quantityPassedQC >= item.totalBoxesOrdered);
+        if (!allItemsQCPassed) {
+            throw new Error('Not all items have passed QC. Please complete all QC checks.');
+        }
+
+        const newPallets = [];
+
+        // --- Generation Loop ---
+        for (const item of po.items) {
+            // Generate Pallets
+            for (let i = 0; i < item.palletsOrdered; i++) {
+                const palletDoc = new Pallet({
+                    factory: po.factory,
+                    tile: item.tile,
+                    type: 'Pallet',
+                    boxCount: po.packingRules.boxesPerPallet,
+                    sourcePurchaseOrder: po._id,
+                });
+                newPallets.push(palletDoc);
+            }
+            // Generate Khatlis
+            for (let i = 0; i < item.khatlisOrdered; i++) {
+                const palletDoc = new Pallet({
+                    factory: po.factory,
+                    tile: item.tile,
+                    type: 'Khatli',
+                    boxCount: po.packingRules.boxesPerKhatli,
+                    sourcePurchaseOrder: po._id,
+                });
+                newPallets.push(palletDoc);
+            }
+        }
+
+        if (newPallets.length > 0) {
+            const createdPallets = await Pallet.insertMany(newPallets, { session });
+            const palletIds = createdPallets.map(p => p._id);
+            po.generatedPallets.push(...palletIds);
+        }
+
+        // --- Final Status Update ---
+        po.status = 'Completed'; // Or 'Packing' if you have a separate packing step
+        await po.save({ session });
+
+        await session.commitTransaction();
+
+        // Fetch the fully populated PO to send back to the frontend
+        const finalPO = await PurchaseOrder.findById(id)
+            .populate('factory', 'name')
+            .populate('items.tile', 'name')
+            .populate('generatedPallets'); // Populate the new field
+
+        res.status(200).json(finalPO);
+
+    } catch (error) {
+        await session.abortTransaction();
+        res.status(400);
+        throw new Error(error.message || 'Failed to generate pallets.');
+    } finally {
+        session.endSession();
+    }
 });

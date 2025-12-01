@@ -69,6 +69,7 @@ import dashboardRoutes from './routes/dashboardRoutes.js'; // <-- ADD THIS
 import factoryRoutes from './routes/factoryRoutes.js';
 import purchaseOrderRoutes from './routes/purchaseOrderRoutes.js';
 import indiaTileRoutes from './routes/indiaTileRoutes.js'; // Add this import
+import palletRoutes from './routes/palletRoutes.js'; // <-- ADD THIS IMPORT
 
 import asyncHandler from './utils/asyncHandler.js';
 
@@ -100,6 +101,7 @@ app.use('/api/dashboard', dashboardRoutes); // <-- ADD THIS
 app.use('/api/factories', factoryRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
 app.use('/api/india-tiles', indiaTileRoutes); // Add this line
+app.use('/api/pallets', palletRoutes); // <-- ADD THIS LINE
 
 
 

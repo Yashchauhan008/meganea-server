@@ -1,13 +1,13 @@
 // backend/src/routes/purchaseOrderRoutes.js
 
 import express from 'express';
-import { 
-    createPurchaseOrder, 
+import {
+    createPurchaseOrder,
     getAllPurchaseOrders,
     getPurchaseOrderById,
     updatePurchaseOrderStatus,
-    // --- 1. IMPORT THE NEW CONTROLLER ---
-    recordQC
+    recordQC,
+    generatePalletsFromPO, // <-- IMPORT THE NEW CONTROLLER
 } from '../controllers/purchaseOrderController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
@@ -16,11 +16,15 @@ const router = express.Router();
 router.use(protect, authorize('admin', 'india-staff'));
 
 router.route('/')
-    .post(createPurchaseOrder)
-    .get(getAllPurchaseOrders);
+    .get(getAllPurchaseOrders)
+    .post(createPurchaseOrder);
 
-// --- 2. ADD THE NEW QC ROUTE ---
-// This is a nested route for a specific item within a specific PO
+// --- ADD THIS NEW ROUTE ---
+// This must be defined before the generic '/:id' route
+router.route('/:id/generate-pallets')
+    .post(generatePalletsFromPO);
+// -------------------------
+
 router.route('/:poId/items/:itemId/qc')
     .post(recordQC);
 
