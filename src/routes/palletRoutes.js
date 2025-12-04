@@ -4,7 +4,8 @@ import {
     createManualPallet,
     deletePallet,
     updatePalletBoxCount,
-    getPalletDetailsForTile
+    getPalletDetailsForTile,
+    getAvailablePalletsByFactory
 } from '../controllers/palletController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
@@ -53,6 +54,13 @@ router.delete(
     protect,
     authorize('admin'),
     deletePallet
+);
+
+router.get(
+    '/available-stock/:factoryId',
+    protect,
+    authorize('admin', 'india-staff'),
+    getAvailablePalletsByFactory
 );
 
 export default router;

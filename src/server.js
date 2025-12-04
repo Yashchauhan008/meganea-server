@@ -70,6 +70,7 @@ import factoryRoutes from './routes/factoryRoutes.js';
 import purchaseOrderRoutes from './routes/purchaseOrderRoutes.js';
 import indiaTileRoutes from './routes/indiaTileRoutes.js'; // Add this import
 import palletRoutes from './routes/palletRoutes.js'; // <-- ADD THIS IMPORT
+import loadingPlanRoutes from './routes/loadingPlanRoutes.js'; // <-- 1. ADD THIS IMPORT
 
 import asyncHandler from './utils/asyncHandler.js';
 
@@ -102,6 +103,8 @@ app.use('/api/factories', factoryRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
 app.use('/api/india-tiles', indiaTileRoutes); // Add this line
 app.use('/api/pallets', palletRoutes); // <-- ADD THIS LINE
+app.use('/api/loading-plans', loadingPlanRoutes); // <-- 2. ADD THIS LINE
+
 
 
 

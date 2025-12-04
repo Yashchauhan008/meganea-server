@@ -1,14 +1,65 @@
+// backend/src/controllers/userController.js
+
 import User from '../models/userModel.js';
 import asyncHandler from '../utils/asyncHandler.js';
-import Company from '../models/companyModel.js'; // <--- ADD THIS LINE
-import logger from '../config/logger.js'; // Assuming you use logger here too
+import Company from '../models/companyModel.js';
+import logger from '../config/logger.js';
+import generateToken from '../utils/generateToken.js'; // --- THIS IMPORT IS ADDED ---
 
+// ===================================================================================
+// THIS IS THE MISSING FUNCTION THAT IS BEING ADDED
+// ===================================================================================
+/**
+ * @desc    Authenticate user & get token
+ * @route   POST /api/users/login
+ * @access  Public
+ */
+export const loginUser = asyncHandler(async (req, res) => {
+    // Your login form sends 'username', but your User model uses 'email' for login.
+    // We find the user by their email, which is passed in the 'username' field from the form.
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+        res.status(400);
+        throw new Error('Please provide an email and password');
+    }
+
+    const user = await User.findOne({ email: username });
+
+    // Check if user exists and password is correct
+    if (user && (await user.matchPassword(password))) {
+        // Check if the user's account is active
+        if (!user.isActive) {
+            res.status(403); // 403 Forbidden
+            throw new Error('Your account is deactivated. Please contact an administrator.');
+        }
+
+        // If everything is correct, send back the token and user object
+        // This response format EXACTLY matches what your AuthContext expects.
+        res.json({
+            token: generateToken(user._id),
+            user: {
+                _id: user._id,
+                name: user.username, // Your frontend uses 'name', so we map 'username' to 'name'
+                username: user.username,
+                email: user.email,
+                role: user.role,
+                location: user.location,
+            },
+        });
+    } else {
+        res.status(401); // 401 Unauthorized
+        throw new Error('Invalid email or password');
+    }
+});
+// ===================================================================================
+// ALL OF YOUR EXISTING CODE BELOW REMAINS UNCHANGED
+// ===================================================================================
 
 // @desc    Create a new user
 // @route   POST /api/users
 // @access  Private/Admin
 export const createUser = asyncHandler(async (req, res) => {
-  // ... function content remains the same
   const { username, email, password, role, location, isActive } = req.body;
 
   const userExists = await User.findOne({ email });
@@ -55,7 +106,6 @@ export const getUserById = asyncHandler(async (req, res) => {
 // @route   PUT /api/users/:id
 // @access  Private/Admin
 export const updateUser = asyncHandler(async (req, res) => {
-  // ... function content remains the same
   const { username, email, role, location, isActive } = req.body;
 
   const user = await User.findById(req.params.id);

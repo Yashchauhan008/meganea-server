@@ -257,3 +257,21 @@ export const updatePalletBoxCount = asyncHandler(async (req, res) => {
         session.endSession();
     }
 });
+
+/**
+ * @desc    Get all available pallets in stock for a specific factory
+ * @route   GET /api/pallets/available-stock/:factoryId
+ * @access  Private (Admin, India-Staff)
+ */
+export const getAvailablePalletsByFactory = asyncHandler(async (req, res) => {
+    const { factoryId } = req.params;
+
+    const availablePallets = await Pallet.find({
+        factory: factoryId,
+        status: 'InFactoryStock',
+    })
+    .populate('tile', 'name size')
+    .sort({ createdAt: 1 }); // FIFO logic - oldest pallets first
+
+    res.status(200).json(availablePallets);
+});
