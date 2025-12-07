@@ -1,7 +1,8 @@
 // backend/src/models/palletModel.js
 
 import mongoose from 'mongoose';
-import { generateId } from '../services/idGenerator.js';
+// The idGenerator is no longer needed here
+// import { generateId } from '../services/idGenerator.js';
 
 const palletSchema = new mongoose.Schema(
     {
@@ -36,12 +37,9 @@ const palletSchema = new mongoose.Schema(
         },
         status: {
             type: String,
-            // --- 1. ADD THE NEW STATUS ---
             enum: ['InFactoryStock', 'LoadedInContainer', 'Dispatched', 'Delivered'],
             default: 'InFactoryStock',
         },
-        // --- 2. ADD THE CONTAINER REFERENCE ---
-        // This will be null until the pallet is loaded into a container
         container: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Container',
@@ -57,12 +55,19 @@ const palletSchema = new mongoose.Schema(
     }
 );
 
+// --- THIS IS THE FIX ---
+// The pre-save hook is REMOVED because it does not trigger on `insertMany`.
+// We will handle ID generation directly in the controller.
+/*
 palletSchema.pre('save', async function (next) {
     if (this.isNew) {
         this.palletId = await generateId('PA');
     }
     next();
 });
+*/
+// --- END OF FIX ---
+
 
 const Pallet = mongoose.model('Pallet', palletSchema);
 

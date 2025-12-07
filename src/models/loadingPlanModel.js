@@ -19,9 +19,15 @@ const loadingPlanSchema = new mongoose.Schema(
         }],
         status: {
             type: String,
-            enum: ['Finalized'],
+            enum: ['Finalized', 'Dispatched'], // Added Dispatched for future use
             default: 'Finalized',
         },
+        // --- NEW FIELD ADDED ---
+        loadingDate: {
+            type: Date,
+            default: Date.now, // Defaults to the creation date
+        },
+        // -----------------------
         createdBy: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'User',

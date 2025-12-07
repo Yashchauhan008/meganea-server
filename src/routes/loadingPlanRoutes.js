@@ -1,31 +1,18 @@
 import express from 'express';
-// --- THIS IS THE FIX: Import the new controller function ---
-import { createLoadingPlan, getLoadingPlans, getLoadingPlanById } from '../controllers/loadingPlanController.js';
+// Import all controller functions
+import { createLoadingPlan, getLoadingPlans, getLoadingPlanById, updateLoadingPlan, deleteLoadingPlan } from '../controllers/loadingPlanController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// This route handles GET for all plans and POST for creating a new one
 router.route('/')
-    .post(
-        protect,
-        authorize('admin', 'india-staff'),
-        createLoadingPlan
-    )
-    .get(
-        protect,
-        authorize('admin', 'india-staff'),
-        getLoadingPlans
-    );
+    .post(protect, authorize('admin', 'india-staff'), createLoadingPlan)
+    .get(protect, authorize('admin', 'india-staff'), getLoadingPlans);
 
-// --- THIS IS THE FIX: Add the new route for getting a single plan by its ID ---
-// This route must be defined to handle requests like /api/loading-plans/60d21b4667d0d8992e610c85
+// This route now handles GET, PUT, and DELETE
 router.route('/:id')
-    .get(
-        protect,
-        authorize('admin', 'india-staff'),
-        getLoadingPlanById
-    );
-// --- END OF FIX ---
+    .get(protect, authorize('admin', 'india-staff'), getLoadingPlanById)
+    .put(protect, authorize('admin', 'india-staff'), updateLoadingPlan)
+    .delete(protect, authorize('admin'), deleteLoadingPlan); // <-- ADD THIS LINE (Admin only)
 
 export default router;

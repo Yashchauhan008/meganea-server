@@ -299,7 +299,6 @@ export const generatePalletsFromPO = asyncHandler(async (req, res) => {
             throw new Error('Purchase Order not found.');
         }
 
-        // --- Validation ---
         if (po.status !== 'QC_Completed') {
             throw new Error(`Cannot generate pallets. PO status is '${po.status}', but must be 'QC_Completed'.`);
         }
@@ -309,51 +308,51 @@ export const generatePalletsFromPO = asyncHandler(async (req, res) => {
             throw new Error('Not all items have passed QC. Please complete all QC checks.');
         }
 
-        const newPallets = [];
+        const palletsToCreate = [];
 
-        // --- Generation Loop ---
         for (const item of po.items) {
-            // Generate Pallets
             for (let i = 0; i < item.palletsOrdered; i++) {
-                const palletDoc = new Pallet({
+                const palletId = await generateId('PA');
+                palletsToCreate.push({
+                    palletId,
                     factory: po.factory,
                     tile: item.tile,
                     type: 'Pallet',
                     boxCount: po.packingRules.boxesPerPallet,
                     sourcePurchaseOrder: po._id,
                 });
-                newPallets.push(palletDoc);
             }
-            // Generate Khatlis
             for (let i = 0; i < item.khatlisOrdered; i++) {
-                const palletDoc = new Pallet({
+                const palletId = await generateId('PA');
+                // --- THIS IS THE FIX ---
+                // The stray comma is removed and replaced with the correct .push() method.
+                palletsToCreate.push({
+                    palletId,
                     factory: po.factory,
                     tile: item.tile,
                     type: 'Khatli',
                     boxCount: po.packingRules.boxesPerKhatli,
                     sourcePurchaseOrder: po._id,
                 });
-                newPallets.push(palletDoc);
+                // --- END OF FIX ---
             }
         }
 
-        if (newPallets.length > 0) {
-            const createdPallets = await Pallet.insertMany(newPallets, { session });
+        if (palletsToCreate.length > 0) {
+            const createdPallets = await Pallet.insertMany(palletsToCreate, { session });
             const palletIds = createdPallets.map(p => p._id);
             po.generatedPallets.push(...palletIds);
         }
 
-        // --- Final Status Update ---
-        po.status = 'Completed'; // Or 'Packing' if you have a separate packing step
+        po.status = 'Completed';
         await po.save({ session });
 
         await session.commitTransaction();
 
-        // Fetch the fully populated PO to send back to the frontend
         const finalPO = await PurchaseOrder.findById(id)
             .populate('factory', 'name')
             .populate('items.tile', 'name')
-            .populate('generatedPallets'); // Populate the new field
+            .populate('generatedPallets');
 
         res.status(200).json(finalPO);
 

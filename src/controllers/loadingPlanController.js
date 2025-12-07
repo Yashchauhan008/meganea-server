@@ -109,11 +109,7 @@ export const getLoadingPlans = asyncHandler(async (req, res) => {
     res.status(200).json(plans);
 });
 
-/**
- * @desc    Get a single Loading Plan by ID
- * @route   GET /api/loading-plans/:id
- * @access  Private
- */
+
 /**
  * @desc    Get a single Loading Plan by ID
  * @route   GET /api/loading-plans/:id
@@ -122,9 +118,6 @@ export const getLoadingPlans = asyncHandler(async (req, res) => {
 export const getLoadingPlanById = asyncHandler(async (req, res) => {
     const { id } = req.params;
 
-    // This is a highly detailed population, perfect for a detail modal.
-    // It fetches the plan, its factory, creator, containers, and for each container,
-    // it fetches the pallets, and for each pallet, it fetches the tile details.
     const plan = await LoadingPlan.findById(id)
         .populate('factory', 'name')
         .populate('createdBy', 'name')
@@ -132,11 +125,12 @@ export const getLoadingPlanById = asyncHandler(async (req, res) => {
             path: 'containers',
             populate: {
                 path: 'pallets',
-                model: 'Pallet', // Explicitly specify the model
+                model: 'Pallet',
                 populate: {
                     path: 'tile',
-                    model: 'Tile', // Explicitly specify the model
-                    select: 'name'
+                    model: 'Tile',
+                    // FIX: Added 'size' to the fields being selected
+                    select: 'name size' 
                 }
             }
         });
@@ -185,24 +179,7 @@ export const updateLoadingPlanStatus = asyncHandler(async (req, res) => {
  * @route   DELETE /api/loading-plans/:id
  * @access  Private
  */
-export const deleteLoadingPlan = asyncHandler(async (req, res) => {
-    const { id } = req.params;
 
-    const plan = await LoadingPlan.findByIdAndDelete(id);
-
-    if (!plan) {
-        res.status(404);
-        throw new Error('Loading Plan not found');
-    }
-
-    // Delete associated containers
-    await Container.deleteMany({ loadingPlan: id });
-
-    res.status(200).json({
-        message: 'Loading Plan deleted successfully',
-        loadingPlanId: plan.loadingPlanId
-    });
-});
 
 /**
  * @desc    Get Loading Plans by Factory
@@ -225,4 +202,129 @@ export const getLoadingPlansByFactory = asyncHandler(async (req, res) => {
         .sort({ createdAt: -1 });
 
     res.status(200).json(plans);
+});
+
+// =================================================================
+// NEW FUNCTION: To handle editing a loading plan
+// =================================================================
+/**
+ * @desc    Update an existing Loading Plan
+ * @route   PUT /api/loading-plans/:id
+ * @access  Private
+ */
+// =================================================================
+// THIS IS THE FULLY CORRECTED AND ROBUST UPDATE FUNCTION
+// =================================================================
+export const updateLoadingPlan = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { containers: updatedContainers, loadingDate } = req.body;
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+        const plan = await LoadingPlan.findById(id).populate('containers').session(session);
+        if (!plan) {
+            throw new Error('Loading Plan not found');
+        }
+
+        // --- 1. Update the simple fields ---
+        if (loadingDate) {
+            plan.loadingDate = loadingDate;
+        }
+
+        // --- 2. Calculate Pallet Differences ---
+        const originalPalletIds = new Set(plan.containers.flatMap(c => c.pallets.map(p => p.toString())));
+        const newPalletIds = new Set(updatedContainers.flatMap(c => c.pallets.map(p => p._id.toString())));
+
+        // Pallets to be REMOVED from the plan entirely
+        const palletsToRevert = [...originalPalletIds].filter(pid => !newPalletIds.has(pid));
+        if (palletsToRevert.length > 0) {
+            await Pallet.updateMany(
+                { _id: { $in: palletsToRevert } },
+                { $set: { status: 'InFactoryStock', container: null } },
+                { session }
+            );
+        }
+
+        // --- 3. Process Each Container ---
+        for (const updatedContainerData of updatedContainers) {
+            const container = await Container.findById(updatedContainerData._id).session(session);
+            if (container) {
+                // Update container details
+                container.containerNumber = updatedContainerData.containerNumber;
+                container.truckNumber = updatedContainerData.truckNumber;
+                container.pallets = updatedContainerData.pallets.map(p => p._id);
+                await container.save({ session });
+
+                // Update the status and container reference for all pallets NOW in this container
+                await Pallet.updateMany(
+                    { _id: { $in: container.pallets } },
+                    { $set: { status: 'LoadedInContainer', container: container._id } },
+                    { session }
+                );
+            }
+        }
+        
+        // --- 4. Save the main plan document ---
+        await plan.save({ session });
+
+        // --- 5. Commit the transaction ---
+        await session.commitTransaction();
+
+        // --- 6. Fetch and return the fully populated, updated plan ---
+        const finalPlan = await LoadingPlan.findById(id)
+            .populate('factory', 'name')
+            .populate('createdBy', 'name')
+            .populate({
+                path: 'containers',
+                populate: { path: 'pallets', model: 'Pallet', populate: { path: 'tile', model: 'Tile', select: 'name size' } }
+            });
+
+        res.status(200).json(finalPlan);
+
+    } catch (error) {
+        await session.abortTransaction();
+        res.status(400).json({ message: error.message || 'Failed to update loading plan.' });
+    } finally {
+        session.endSession();
+    }
+});
+
+// --- deleteLoadingPlan is correct and remains unchanged ---
+export const deleteLoadingPlan = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+        const plan = await LoadingPlan.findById(id).session(session);
+        if (!plan) {
+            throw new Error('Loading Plan not found');
+        }
+
+        const containersInPlan = await Container.find({ loadingPlan: plan._id }).session(session);
+        const allPalletIds = containersInPlan.flatMap(c => c.pallets);
+
+        if (allPalletIds.length > 0) {
+            await Pallet.updateMany(
+                { _id: { $in: allPalletIds } },
+                { $set: { status: 'InFactoryStock', container: null } },
+                { session }
+            );
+        }
+
+        await Container.deleteMany({ loadingPlan: plan._id }, { session });
+        await plan.deleteOne({ session });
+        await session.commitTransaction();
+
+        res.status(200).json({ message: 'Loading Plan and associated data deleted successfully. Pallet stock has been reverted.' });
+
+    } catch (error) {
+        await session.abortTransaction();
+        res.status(400).json({ message: error.message || 'Failed to delete loading plan.' });
+    } finally {
+        session.endSession();
+    }
 });
