@@ -22,25 +22,32 @@ const containerSchema = new mongoose.Schema(
             trim: true,
             uppercase: true,
         },
+        // This is now optional, as containers can be created independently.
+        loadingPlan: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'LoadingPlan',
+        },
+        // We add a direct reference to the primary loading factory.
+        factory: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Factory',
+        },
         pallets: [
             {
                 type: mongoose.Schema.Types.ObjectId,
                 ref: 'Pallet',
             },
         ],
-        loadingPlan: {
-            type: mongoose.Schema.Types.ObjectId,
-            ref: 'LoadingPlan',
-            required: true,
-        },
         status: {
             type: String,
-            enum: ['Loaded', 'Dispatched'],
-            default: 'Loaded',
+            enum: ['Empty', 'Loading', 'Loaded', 'Dispatched', 'In Transit', 'Delivered'],
+            default: 'Empty',
         },
-        dispatchPlan: {
+        // We add a createdBy field
+        createdBy: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: 'DispatchPlan',
+            ref: 'User',
+            required: true,
         },
     },
     {
@@ -48,18 +55,13 @@ const containerSchema = new mongoose.Schema(
     }
 );
 
-// --- THIS IS THE FIX ---
-// The pre-save hook now correctly uses the 'CN' prefix with your idGenerator.
-// Your generator will create a new counter document with _id: 'CN' if it doesn't exist.
+// The pre-save hook for ID generation remains.
 containerSchema.pre('save', async function (next) {
-    if (this.isNew) {
-        // This will now correctly call your idGenerator with the prefix 'CN'
-        // and assign the result (e.g., "CN-00001") to the containerId field.
+    if (this.isNew && !this.containerId) {
         this.containerId = await generateId('CN');
     }
     next();
 });
-// --- END OF FIX ---
 
 const Container = mongoose.model('Container', containerSchema);
 

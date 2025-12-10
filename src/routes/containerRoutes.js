@@ -1,21 +1,28 @@
 import express from 'express';
 import {
+    createContainer,
     getAllContainers,
+    getContainerById, // <-- IMPORT THE NEW FUNCTION
+    updateContainer,
     updateContainerStatus
 } from '../controllers/containerController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// All routes in this file are protected and restricted to India staff and admins
 router.use(protect, authorize('admin', 'india-staff'));
 
-// Route for GET /api/containers
 router.route('/')
-    .get(getAllContainers);
+    .get(getAllContainers)
+    .post(createContainer);
 
-// Route for PUT /api/containers/:id/status
+// --- THIS IS THE CORRECTED ROUTE FOR A SINGLE CONTAINER ---
+router.route('/:id')
+    .get(getContainerById) // <-- ADD THE GET HANDLER
+    .put(updateContainer);
+// --- END OF CORRECTION ---
+
 router.route('/:id/status')
-    .put(updateContainerStatus);
+    .patch(updateContainerStatus);
 
 export default router;

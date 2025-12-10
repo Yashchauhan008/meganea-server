@@ -258,11 +258,25 @@ export const updatePalletBoxCount = asyncHandler(async (req, res) => {
     }
 });
 
+
+
 /**
- * @desc    Get all available pallets in stock for a specific factory
- * @route   GET /api/pallets/available-stock/:factoryId
+ * @desc    Get all available pallets from ALL factories
+ * @route   GET /api/pallets/available-stock
  * @access  Private (Admin, India-Staff)
  */
+export const getAllAvailablePallets = asyncHandler(async (req, res) => {
+    const allAvailablePallets = await Pallet.find({
+        status: 'InFactoryStock',
+    })
+    .populate({ path: 'tile', select: 'name size' })
+    .populate({ path: 'factory', select: 'name' }) // Populate the factory name
+    .sort({ 'factory.name': 1, createdAt: 1 }); // Sort by factory then by date
+
+    res.status(200).json(allAvailablePallets);
+});
+
+
 export const getAvailablePalletsByFactory = asyncHandler(async (req, res) => {
     const { factoryId } = req.params;
 
@@ -270,8 +284,11 @@ export const getAvailablePalletsByFactory = asyncHandler(async (req, res) => {
         factory: factoryId,
         status: 'InFactoryStock',
     })
-    .populate('tile', 'name size')
-    .sort({ createdAt: 1 }); // FIFO logic - oldest pallets first
+    .populate({ path: 'tile', select: 'name size' })
+    .populate({ path: 'factory', select: 'name' }) // Also populate the factory name
+    .sort({ createdAt: 1 });
 
     res.status(200).json(availablePallets);
 });
+
+
