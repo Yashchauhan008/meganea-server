@@ -2,118 +2,268 @@ import asyncHandler from '../utils/asyncHandler.js';
 import Pallet from '../models/palletModel.js';
 import Tile from '../models/tileModel.js';
 import PurchaseOrder from '../models/purchaseOrderModel.js';
+import Factory from '../models/factoryModel.js';
 import mongoose from 'mongoose';
 
 /**
- * @desc    Get all pallets currently in factory stock, grouped by factory and tile.
- * @route   GET /api/pallets/factory-stock
+ * @desc    Get all factory stock (summary view of all factories combined)
+ * @route   GET /api/pallets/all-factory-stock
  * @access  Private (India Staff, Admin)
+ * NOTE: Separates Pallets and Khatlis by type
  */
-export const getFactoryStock = asyncHandler(async (req, res) => {
-    const stock = await Pallet.aggregate([
-        // 1. Filter for only the pallets that are physically in the factory.
+export const getAllFactoryStock = asyncHandler(async (req, res) => {
+    const allStock = await Pallet.aggregate([
+        // 1. Filter for only pallets in factory stock
         {
             $match: { status: 'InFactoryStock' }
         },
-        // 2. Group pallets by their factory and tile type, and collect pallet docs.
+        // 2. Lookup tile information
+        {
+            $lookup: {
+                from: 'tiles',
+                localField: 'tile',
+                foreignField: '_id',
+                as: 'tileInfo'
+            }
+        },
+        // 3. Unwind tile info
+        {
+            $unwind: {
+                path: '$tileInfo',
+                preserveNullAndEmptyArrays: true
+            }
+        },
+        // 4. Lookup factory information
+        {
+            $lookup: {
+                from: 'factories',
+                localField: 'factory',
+                foreignField: '_id',
+                as: 'factoryInfo'
+            }
+        },
+        // 5. Unwind factory info
+        {
+            $unwind: {
+                path: '$factoryInfo',
+                preserveNullAndEmptyArrays: true
+            }
+        },
+        // 6. Project the fields we need
+        {
+            $project: {
+                palletId: 1,
+                factory: '$factoryInfo',
+                tile: '$tileInfo',
+                boxCount: 1,
+                type: 1, // 'Pallet' or 'Khatli'
+                status: 1,
+                createdAt: 1
+            }
+        },
+        // 7. Sort by factory name, type, and tile name
+        {
+            $sort: { 'factory.name': 1, 'type': 1, 'tile.name': 1 }
+        }
+    ]);
+
+    res.status(200).json(allStock);
+});
+
+/**
+ * @desc    Get stock for a specific factory with detailed breakdown
+ * @route   GET /api/pallets/factory-stock/:factoryId
+ * @access  Private (India Staff, Admin)
+ * NOTE: Returns all pallets and khatlis for the factory
+ */
+export const getFactoryStockByFactory = asyncHandler(async (req, res) => {
+    const { factoryId } = req.params;
+
+    // Validate factory ID
+    if (!mongoose.Types.ObjectId.isValid(factoryId)) {
+        res.status(400);
+        throw new Error('Invalid factory ID');
+    }
+
+    const factoryStock = await Pallet.find({
+        factory: factoryId,
+        status: 'InFactoryStock'
+    })
+    .populate({
+        path: 'tile',
+        select: 'name size surface number'
+    })
+    .populate({
+        path: 'factory',
+        select: 'name address'
+    })
+    .populate({
+        path: 'sourcePurchaseOrder',
+        select: 'poId'
+    })
+    .sort({ type: 1, createdAt: -1 }); // Sort by type first (Khatli, then Pallet)
+
+    res.status(200).json(factoryStock);
+});
+
+/**
+ * @desc    Get aggregated stock summary for a specific factory
+ * @route   GET /api/pallets/factory-stock-summary/:factoryId
+ * @access  Private (India Staff, Admin)
+ * NOTE: Separates summary by type (Pallet vs Khatli)
+ */
+export const getFactoryStockSummary = asyncHandler(async (req, res) => {
+    const { factoryId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(factoryId)) {
+        res.status(400);
+        throw new Error('Invalid factory ID');
+    }
+
+    // Get summary by type
+    const summaryByType = await Pallet.aggregate([
+        {
+            $match: {
+                factory: new mongoose.Types.ObjectId(factoryId),
+                status: 'InFactoryStock'
+            }
+        },
+        {
+            $group: {
+                _id: '$type', // Group by type (Pallet or Khatli)
+                count: { $sum: 1 },
+                totalBoxes: { $sum: '$boxCount' }
+            }
+        },
+        {
+            $sort: { '_id': 1 }
+        }
+    ]);
+
+    // Get detailed summary by tile and type
+    const detailedSummary = await Pallet.aggregate([
+        {
+            $match: {
+                factory: new mongoose.Types.ObjectId(factoryId),
+                status: 'InFactoryStock'
+            }
+        },
         {
             $group: {
                 _id: {
-                    factory: '$factory',
-                    tile: '$tile'
+                    tile: '$tile',
+                    boxCount: '$boxCount',
+                    type: '$type'
                 },
-                totalPallets: { $sum: { $cond: [{ $eq: ['$type', 'Pallet'] }, 1, 0] } },
-                totalKhatlis: { $sum: { $cond: [{ $eq: ['$type', 'Khatli'] }, 1, 0] } },
-                totalBoxes: { $sum: '$boxCount' },
+                count: { $sum: 1 },
+                totalBoxes: { $sum: '$boxCount' }
             }
         },
-        // 3. Populate the tile information (name, size).
         {
             $lookup: {
-                from: 'tiles', // The actual name of the tiles collection in MongoDB
+                from: 'tiles',
                 localField: '_id.tile',
                 foreignField: '_id',
                 as: 'tileInfo'
             }
         },
-        // 4. Deconstruct the tileInfo array to a single object.
         {
             $unwind: '$tileInfo'
         },
-        // 5. Group the results by factory.
-        {
-            $group: {
-                _id: '$_id.factory',
-                tiles: {
-                    $push: {
-                        tile: '$tileInfo',
-                        totalPallets: '$totalPallets',
-                        totalKhatlis: '$totalKhatlis',
-                        totalBoxes: '$totalBoxes',
-                    }
-                }
-            }
-        },
-        // 6. Populate the factory information (name).
-        {
-            $lookup: {
-                from: 'factories', // The actual name of the factories collection
-                localField: '_id',
-                foreignField: '_id',
-                as: 'factoryInfo'
-            }
-        },
-        // 7. Deconstruct the factoryInfo array.
-        {
-            $unwind: '$factoryInfo'
-        },
-        // 8. Project the final, clean structure for the frontend.
         {
             $project: {
-                _id: 0, // Exclude the default _id
-                factory: '$factoryInfo',
-                tiles: '$tiles'
+                _id: 0,
+                tile: '$tileInfo',
+                boxCount: '$_id.boxCount',
+                type: '$_id.type',
+                itemCount: '$count',
+                totalBoxes: '$totalBoxes'
             }
         },
-        // 9. Sort the final results by factory name.
         {
-            $sort: { 'factory.name': 1 }
+            $sort: { 'type': 1, 'tile.name': 1 }
         }
     ]);
 
-    res.status(200).json(stock);
+    // Calculate overall statistics
+    const totalItems = summaryByType.reduce((sum, item) => sum + item.count, 0);
+    const totalBoxes = summaryByType.reduce((sum, item) => sum + item.totalBoxes, 0);
+
+    // Separate by type
+    const palletSummary = summaryByType.find(s => s._id === 'Pallet') || { _id: 'Pallet', count: 0, totalBoxes: 0 };
+    const khatliSummary = summaryByType.find(s => s._id === 'Khatli') || { _id: 'Khatli', count: 0, totalBoxes: 0 };
+
+    res.status(200).json({
+        factory: factoryId,
+        totalItems,
+        totalBoxes,
+        byType: {
+            pallets: {
+                count: palletSummary.count,
+                totalBoxes: palletSummary.totalBoxes
+            },
+            khatlis: {
+                count: khatliSummary.count,
+                totalBoxes: khatliSummary.totalBoxes
+            }
+        },
+        detailedSummary
+    });
 });
 
 /**
- * @desc    Manually create a single pallet and adjust stock.
+ * @desc    Manually create a single pallet or khatli and adjust stock.
  * @route   POST /api/pallets/manual-adjustment
  * @access  Private (Admin)
+ * UPDATED: Now supports custom pallets without PurchaseOrder (poId: 'CUSTOM')
  */
 export const createManualPallet = asyncHandler(async (req, res) => {
     const { factoryId, tileId, poId, type, boxCount } = req.body;
 
-    if (!factoryId || !tileId || !poId || !type || !boxCount) {
+    // poId is now optional - can be 'CUSTOM' for custom pallets
+    if (!factoryId || !tileId || !type || !boxCount) {
         res.status(400);
-        throw new Error('All fields are required: factory, tile, PO, type, and box count.');
+        throw new Error('All fields are required: factory, tile, type, and box count.');
+    }
+
+    // Validate type
+    if (!['Pallet', 'Khatli'].includes(type)) {
+        res.status(400);
+        throw new Error('Type must be either "Pallet" or "Khatli".');
     }
 
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-        const sourcePO = await PurchaseOrder.findById(poId).session(session);
-        if (!sourcePO) {
-            throw new Error('Source Purchase Order not found.');
+        let sourcePurchaseOrderId = null;
+        let isCustom = false;
+
+        // Check if this is a custom pallet (poId === 'CUSTOM')
+        if (poId && poId !== 'CUSTOM') {
+            // Validate PO exists for non-custom pallets
+            const sourcePO = await PurchaseOrder.findById(poId).session(session);
+            if (!sourcePO) {
+                throw new Error('Source Purchase Order not found.');
+            }
+            sourcePurchaseOrderId = poId;
+            isCustom = false;
+        } else if (poId === 'CUSTOM') {
+            // This is a custom pallet without a PO
+            sourcePurchaseOrderId = null;
+            isCustom = true;
         }
 
         const newPallet = new Pallet({
+            palletId: `PA-${Date.now()}`,
             factory: factoryId,
             tile: tileId,
-            sourcePurchaseOrder: poId,
+            sourcePurchaseOrder: sourcePurchaseOrderId,
             type,
             boxCount,
             status: 'InFactoryStock',
             isManualAdjustment: true,
+            isCustom: isCustom,
         });
         await newPallet.save({ session });
 
@@ -129,16 +279,15 @@ export const createManualPallet = asyncHandler(async (req, res) => {
     } catch (error) {
         await session.abortTransaction();
         res.status(400);
-        throw new Error(error.message || 'Failed to create manual pallet.');
+        throw new Error(error.message || 'Failed to create pallet/khatli.');
     } finally {
         session.endSession();
     }
 });
 
-
 /**
- * @desc    Delete a single pallet and revert stock.
- * @route   DELETE /api/pallets/pallet/:id
+ * @desc    Delete a single pallet or khatli and revert stock.
+ * @route   DELETE /api/pallets/:id
  * @access  Private (Admin)
  */
 export const deletePallet = asyncHandler(async (req, res) => {
@@ -151,11 +300,11 @@ export const deletePallet = asyncHandler(async (req, res) => {
         const palletToDelete = await Pallet.findById(id).session(session);
 
         if (!palletToDelete) {
-            throw new Error('Pallet not found.');
+            throw new Error('Item not found.');
         }
 
         if (palletToDelete.status !== 'InFactoryStock') {
-            throw new Error(`Cannot delete a pallet with status '${palletToDelete.status}'. It may already be allocated to a shipment.`);
+            throw new Error(`Cannot delete an item with status '${palletToDelete.status}'. It may already be allocated to a shipment.`);
         }
 
         await Tile.findByIdAndUpdate(
@@ -167,19 +316,19 @@ export const deletePallet = asyncHandler(async (req, res) => {
         await palletToDelete.deleteOne({ session });
 
         await session.commitTransaction();
-        res.status(200).json({ message: 'Pallet deleted and stock reverted successfully.' });
+        res.status(200).json({ message: 'Item deleted and stock reverted successfully.' });
 
     } catch (error) {
         await session.abortTransaction();
         res.status(400);
-        throw new Error(error.message || 'Failed to delete pallet.');
+        throw new Error(error.message || 'Failed to delete item.');
     } finally {
         session.endSession();
     }
 });
 
 /**
- * @desc    Get detailed list of pallets for a specific tile at a specific factory.
+ * @desc    Get detailed list of pallets/khatlis for a specific tile at a specific factory.
  * @route   GET /api/pallets/details/:factoryId/:tileId
  * @access  Private (Admin)
  */
@@ -191,22 +340,15 @@ export const getPalletDetailsForTile = asyncHandler(async (req, res) => {
         tile: tileId,
         status: 'InFactoryStock'
     })
-    // --- THIS IS THE FIX ---
-    // Populate the 'sourcePurchaseOrder' field to get the poId.
-    // We only select the 'poId' field to keep the payload small.
-    .populate('sourcePurchaseOrder', 'poId') 
-    .sort({ createdAt: -1 });
+    .populate('sourcePurchaseOrder', 'poId')
+    .sort({ type: 1, createdAt: -1 });
 
     res.status(200).json(pallets);
 });
 
-
-// backend/src/controllers/palletController.js
-// ... (keep all other controller functions)
-
 /**
- * @desc    Update the box count of a single pallet and adjust stock.
- * @route   PUT /api/pallets/pallet/:id
+ * @desc    Update the box count of a single pallet/khatli and adjust stock.
+ * @route   PUT /api/pallets/:id
  * @access  Private (Admin)
  */
 export const updatePalletBoxCount = asyncHandler(async (req, res) => {
@@ -225,10 +367,10 @@ export const updatePalletBoxCount = asyncHandler(async (req, res) => {
         const palletToUpdate = await Pallet.findById(id).session(session);
 
         if (!palletToUpdate) {
-            throw new Error('Pallet not found.');
+            throw new Error('Item not found.');
         }
         if (palletToUpdate.status !== 'InFactoryStock') {
-            throw new Error(`Cannot edit a pallet with status '${palletToUpdate.status}'.`);
+            throw new Error(`Cannot edit an item with status '${palletToUpdate.status}'.`);
         }
 
         const oldCount = palletToUpdate.boxCount;
@@ -252,13 +394,11 @@ export const updatePalletBoxCount = asyncHandler(async (req, res) => {
     } catch (error) {
         await session.abortTransaction();
         res.status(400);
-        throw new Error(error.message || 'Failed to update pallet.');
+        throw new Error(error.message || 'Failed to update item.');
     } finally {
         session.endSession();
     }
 });
-
-
 
 /**
  * @desc    Get all available pallets from ALL factories
@@ -269,14 +409,18 @@ export const getAllAvailablePallets = asyncHandler(async (req, res) => {
     const allAvailablePallets = await Pallet.find({
         status: 'InFactoryStock',
     })
-    .populate({ path: 'tile', select: 'name size' })
-    .populate({ path: 'factory', select: 'name' }) // Populate the factory name
-    .sort({ 'factory.name': 1, createdAt: 1 }); // Sort by factory then by date
+    .populate({ path: 'tile', select: 'name size surface' })
+    .populate({ path: 'factory', select: 'name' })
+    .sort({ type: 1, 'factory.name': 1, createdAt: 1 });
 
     res.status(200).json(allAvailablePallets);
 });
 
-
+/**
+ * @desc    Get available pallets for a specific factory
+ * @route   GET /api/pallets/available/:factoryId
+ * @access  Private (Admin, India-Staff)
+ */
 export const getAvailablePalletsByFactory = asyncHandler(async (req, res) => {
     const { factoryId } = req.params;
 
@@ -284,11 +428,9 @@ export const getAvailablePalletsByFactory = asyncHandler(async (req, res) => {
         factory: factoryId,
         status: 'InFactoryStock',
     })
-    .populate({ path: 'tile', select: 'name size' })
-    .populate({ path: 'factory', select: 'name' }) // Also populate the factory name
-    .sort({ createdAt: 1 });
+    .populate({ path: 'tile', select: 'name size surface' })
+    .populate({ path: 'factory', select: 'name' })
+    .sort({ type: 1, createdAt: 1 });
 
     res.status(200).json(availablePallets);
 });
-
-

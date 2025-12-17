@@ -24,7 +24,8 @@ const palletSchema = new mongoose.Schema(
         sourcePurchaseOrder: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'PurchaseOrder',
-            required: true,
+            required: false,
+            default: null,
         },
         type: {
             type: String,
@@ -46,6 +47,10 @@ const palletSchema = new mongoose.Schema(
             default: null,
         },
         isManualAdjustment: {
+            type: Boolean,
+            default: false,
+        },
+        isCustom: {
             type: Boolean,
             default: false,
         },

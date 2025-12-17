@@ -1,80 +1,38 @@
 import express from 'express';
-import {
-    getFactoryStock,
-    createManualPallet,
-    deletePallet,
-    updatePalletBoxCount,
-    getPalletDetailsForTile,
+import { 
+    getAllFactoryStock, 
+    getFactoryStockByFactory, 
+    getFactoryStockSummary,
+    getAllAvailablePallets,
     getAvailablePalletsByFactory,
-    getAllAvailablePallets
+    createManualPallet,
+    updatePalletBoxCount,
+    deletePallet,
+    getPalletDetailsForTile
 } from '../controllers/palletController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// This route fetches the main grouped stock for the dashboard/stock page.
-router.get(
-    '/factory-stock',
-    protect,
-    authorize('admin', 'india-staff'),
-    getFactoryStock
-);
+// ===== SUMMARY VIEW - ALL FACTORIES =====
+router.get('/all-factory-stock', protect, authorize('admin', 'india-staff'), getAllFactoryStock);
 
-// This route handles manual pallet creation.
-router.post(
-    '/manual-adjustment',
-    protect,
-    authorize('admin'),
-    createManualPallet
-);
+// ===== DETAIL VIEW - SPECIFIC FACTORY =====
+router.get('/factory-stock/:factoryId', protect, authorize('admin', 'india-staff'), getFactoryStockByFactory);
+router.get('/factory-stock-summary/:factoryId', protect, authorize('admin', 'india-staff'), getFactoryStockSummary);
 
-// This route gets the detailed list of individual pallets for a specific tile.
-router.get(
-    '/details/:factoryId/:tileId',
-    protect,
-    authorize('admin'),
-    getPalletDetailsForTile
-);
+// ===== AVAILABLE PALLETS =====
+router.get('/available-stock', protect, authorize('admin', 'india-staff'), getAllAvailablePallets);
+router.get('/available/:factoryId', protect, authorize('admin', 'india-staff'), getAvailablePalletsByFactory);
 
-// This route updates a single pallet's box count.
-router.put(
-    '/pallet/:id',
-    protect,
-    authorize('admin'),
-    updatePalletBoxCount
-);
+// ===== PALLET DETAILS FOR TILE =====
+router.get('/details/:factoryId/:tileId', protect, authorize('admin', 'india-staff'), getPalletDetailsForTile);
 
-// This route deletes a single pallet.
-router.delete(
-    '/pallet/:id',
-    protect,
-    authorize('admin'),
-    deletePallet
-);
+// ===== MANUAL ADJUSTMENTS =====
+router.post('/manual-adjustment', protect, authorize('admin'), createManualPallet);
 
-
-// --- THIS IS THE CRITICAL FIX ---
-
-// ROUTE 1: Get ALL available pallets from ALL factories.
-// This general route MUST be defined BEFORE the more specific route with a parameter.
-router.get(
-    '/available-stock',
-    protect,
-    authorize('admin', 'india-staff'),
-    getAllAvailablePallets
-);
-
-// ROUTE 2: Get available pallets for a SPECIFIC factory.
-// This route will only be matched if the URL has something after '/available-stock/',
-// e.g., '/available-stock/60d21b4667d0d8992e610c85'
-router.get(
-    '/available-stock/:factoryId',
-    protect,
-    authorize('admin', 'india-staff'),
-    getAvailablePalletsByFactory
-);
-
-// --- END OF CRITICAL FIX ---
-
+// ===== UPDATE AND DELETE =====
+router.put('/:id', protect, authorize('admin'), updatePalletBoxCount);
+router.delete('/:id', protect, authorize('admin'), deletePallet);
 
 export default router;
