@@ -285,47 +285,6 @@ export const createManualPallet = asyncHandler(async (req, res) => {
     }
 });
 
-/**
- * @desc    Delete a single pallet or khatli and revert stock.
- * @route   DELETE /api/pallets/:id
- * @access  Private (Admin)
- */
-export const deletePallet = asyncHandler(async (req, res) => {
-    const { id } = req.params;
-
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
-    try {
-        const palletToDelete = await Pallet.findById(id).session(session);
-
-        if (!palletToDelete) {
-            throw new Error('Item not found.');
-        }
-
-        if (palletToDelete.status !== 'InFactoryStock') {
-            throw new Error(`Cannot delete an item with status '${palletToDelete.status}'. It may already be allocated to a shipment.`);
-        }
-
-        await Tile.findByIdAndUpdate(
-            palletToDelete.tile,
-            { $inc: { 'stockDetails.inFactoryStock': -palletToDelete.boxCount } },
-            { session }
-        );
-
-        await palletToDelete.deleteOne({ session });
-
-        await session.commitTransaction();
-        res.status(200).json({ message: 'Item deleted and stock reverted successfully.' });
-
-    } catch (error) {
-        await session.abortTransaction();
-        res.status(400);
-        throw new Error(error.message || 'Failed to delete item.');
-    } finally {
-        session.endSession();
-    }
-});
 
 /**
  * @desc    Get detailed list of pallets/khatlis for a specific tile at a specific factory.
@@ -434,3 +393,133 @@ export const getAvailablePalletsByFactory = asyncHandler(async (req, res) => {
 
     res.status(200).json(availablePallets);
 });
+
+
+export const getFactoryStock = asyncHandler(async (req, res) => {
+    const { factoryId, status, type } = req.query;
+  
+    const filter = { deleted: { $ne: true } };
+  
+    if (factoryId) filter.factory = factoryId;
+    if (status) filter.status = status;
+    if (type) filter.type = type;
+  
+    const pallets = await Pallet.find(filter)
+      .populate('tile', 'name size surface')
+      .populate('factory', 'name')
+      .populate('purchaseOrder', 'purchaseOrderId')
+      .sort({ createdAt: -1 });
+  
+    // Group by tile, factory, and type
+    const grouped = {};
+  
+    pallets.forEach((pallet) => {
+      const key = `${pallet.tile._id}-${pallet.factory._id}-${pallet.type}`;
+      
+      if (!grouped[key]) {
+        grouped[key] = {
+          tile: pallet.tile,
+          factory: pallet.factory,
+          type: pallet.type,
+          pallets: [],
+          totalCount: 0,
+          totalBoxes: 0,
+        };
+      }
+  
+      grouped[key].pallets.push(pallet);
+      grouped[key].totalCount++;
+      grouped[key].totalBoxes += pallet.boxCount;
+    });
+  
+    res.status(200).json({
+      pallets,
+      grouped: Object.values(grouped),
+    });
+  });
+
+
+  /**
+ * @desc    Get all pallets
+ * @route   GET /api/pallets
+ * @access  Private (Admin, India Staff)
+ */
+export const getAllPallets = asyncHandler(async (req, res) => {
+    const pallets = await Pallet.find({ deleted: { $ne: true } })
+      .populate('tile', 'name size surface')
+      .populate('factory', 'name')
+      .populate('purchaseOrder', 'purchaseOrderId')
+      .sort({ createdAt: -1 });
+  
+    res.status(200).json(pallets);
+  });
+
+
+  /**
+ * @desc    Get single pallet
+ * @route   GET /api/pallets/:id
+ * @access  Private (Admin, India Staff)
+ */
+export const getPalletById = asyncHandler(async (req, res) => {
+    const pallet = await Pallet.findById(req.params.id)
+      .populate('tile')
+      .populate('factory')
+      .populate('purchaseOrder');
+  
+    if (!pallet) {
+      res.status(404);
+      throw new Error('Pallet not found');
+    }
+  
+    res.status(200).json(pallet);
+  });
+
+
+  export const updatePallet = asyncHandler(async (req, res) => {
+    const pallet = await Pallet.findById(req.params.id);
+  
+    if (!pallet) {
+      res.status(404);
+      throw new Error('Pallet not found');
+    }
+  
+    if (pallet.status !== 'InFactoryStock') {
+      res.status(400);
+      throw new Error('Can only edit pallets in factory stock');
+    }
+  
+    const { boxCount, type } = req.body;
+  
+    if (boxCount) pallet.boxCount = boxCount;
+    if (type) pallet.type = type;
+  
+    await pallet.save();
+  
+    res.status(200).json({
+      message: 'Pallet updated successfully',
+      pallet,
+    });
+  });
+  
+
+  export const deletePallet = asyncHandler(async (req, res) => {
+    const pallet = await Pallet.findById(req.params.id);
+  
+    if (!pallet) {
+      res.status(404);
+      throw new Error('Pallet not found');
+    }
+  
+    if (pallet.status !== 'InFactoryStock') {
+      res.status(400);
+      throw new Error('Can only delete pallets in factory stock');
+    }
+  
+    pallet.deleted = true;
+    pallet.deletedAt = new Date();
+    await pallet.save();
+  
+    res.status(200).json({
+      message: 'Pallet deleted successfully',
+    });
+  });

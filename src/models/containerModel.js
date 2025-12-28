@@ -112,7 +112,7 @@ const containerSchema = new mongoose.Schema(
     khatlis: [
       {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Khatli',
+        ref: 'Pallet',
       },
     ],
 

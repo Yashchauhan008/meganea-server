@@ -2,15 +2,15 @@
 
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import Counter from './src/models/counterModel.js';
-import Booking from './src/models/bookingModel.js';
-import DispatchOrder from './src/models/dispatchOrderModel.js';
-import Company from './src/models/companyModel.js';
-import RestockRequest from './src/models/restockRequestModel.js';
-import Tile from './src/models/tileModel.js';
-import PurchaseOrder from './src/models/purchaseOrderModel.js';
-import Pallet from './src/models/palletModel.js';
-import LoadingPlan from './src/models/loadingPlanModel.js';
+import Counter from '../src/models/counterModel.js';
+import Booking from '../src/models/bookingModel.js';
+import DispatchOrder from '../src/models/dispatchOrderModel.js';
+import Company from '../src/models/companyModel.js';
+import RestockRequest from '../src/models/restockRequestModel.js';
+import Tile from '../src/models/tileModel.js';
+import PurchaseOrder from '../src/models/purchaseOrderModel.js';
+import Pallet from '../src/models/palletModel.js';
+import LoadingPlan from '../src/models/loadingPlanModel.js';
 
 dotenv.config();
 

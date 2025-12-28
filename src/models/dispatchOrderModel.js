@@ -269,7 +269,8 @@ dispatchOrderSchema.methods.calculateStockSummary = function () {
       }
     });
 
-    const factoryId = container.factory.toString();
+    // Handle null factory gracefully
+    const factoryId = container.factory ? container.factory.toString() : 'unknown';
     if (!byFactory.has(factoryId)) {
       byFactory.set(factoryId, { pallets: 0, khatlis: 0, boxes: 0 });
     }
