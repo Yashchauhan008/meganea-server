@@ -1,4 +1,81 @@
-// backend/src/models/purchaseOrderModel.js
+// // backend/src/models/purchaseOrderModel.js
+
+// import mongoose from 'mongoose';
+// import { generateId } from '../services/idGenerator.js';
+
+// const qcHistorySchema = new mongoose.Schema({
+//     quantityChecked: { type: Number, required: true },
+//     quantityPassed: { type: Number, required: true },
+//     quantityFailed: { type: Number, required: true },
+//     qcDate: { type: Date, default: Date.now },
+//     checkedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+//     notes: { type: String },
+// });
+
+// const poItemSchema = new mongoose.Schema({
+//     tile: { 
+//         type: mongoose.Schema.Types.ObjectId, 
+//         ref: 'Tile',
+//         required: true 
+//     },
+//     palletsOrdered: { type: Number, required: true, default: 0 },
+//     khatlisOrdered: { type: Number, required: true, default: 0 },
+//     totalBoxesOrdered: { type: Number },
+//     quantityPassedQC: { type: Number, default: 0 },
+//     qcHistory: [qcHistorySchema],
+// });
+
+// const purchaseOrderSchema = new mongoose.Schema({
+//     poId: { type: String, required: true, unique: true },
+//     sourceRestockRequest: { type: mongoose.Schema.Types.ObjectId, ref: 'RestockRequest' },
+//     factory: { type: mongoose.Schema.Types.ObjectId, ref: 'Factory', required: true },
+//     packingRules: {
+//         boxesPerPallet: { type: Number, required: true },
+//         boxesPerKhatli: { type: Number, required: true },
+//         palletsPerContainer: { type: Number, required: true },
+//     },
+//     items: [poItemSchema],
+    
+//     // --- ADD THIS NEW FIELD ---
+//     // This will store a reference to all pallets created from this PO.
+//     generatedPallets: [{
+//         type: mongoose.Schema.Types.ObjectId,
+//         ref: 'Pallet'
+//     }],
+//     // --------------------------
+
+//     status: {
+//         type: String,
+//         enum: ['Draft', 'SentToFactory', 'Manufacturing', 'QC_InProgress', 'QC_Completed', 'Packing', 'Completed', 'Cancelled'],
+//         default: 'Draft',
+//     },
+//     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+//     notes: { type: String },
+// }, { timestamps: true });
+
+// // Pre-save hook (no changes here)
+// purchaseOrderSchema.pre('save', function(next) {
+//     if (this.isModified('items') || this.isModified('packingRules')) {
+//         this.items.forEach(item => {
+//             const boxesFromPallets = item.palletsOrdered * this.packingRules.boxesPerPallet;
+//             const boxesFromKhatlis = item.khatlisOrdered * this.packingRules.boxesPerKhatli;
+//             item.totalBoxesOrdered = boxesFromPallets + boxesFromKhatlis;
+//         });
+//     }
+//     next();
+// });
+
+// // Pre-validate hook (no changes here)
+// purchaseOrderSchema.pre('validate', async function(next) {
+//     if (this.isNew && !this.poId) {
+//         this.poId = await generateId('PO');
+//     }
+//     next();
+// });
+
+// const PurchaseOrder = mongoose.model('PurchaseOrder', purchaseOrderSchema);
+// export default PurchaseOrder;
+// FILE LOCATION: backend/src/models/purchaseOrderModel.js
 
 import mongoose from 'mongoose';
 import { generateId } from '../services/idGenerator.js';
@@ -22,6 +99,11 @@ const poItemSchema = new mongoose.Schema({
     khatlisOrdered: { type: Number, required: true, default: 0 },
     totalBoxesOrdered: { type: Number },
     quantityPassedQC: { type: Number, default: 0 },
+    // NEW: Track how many boxes have been converted to pallets/khatlis
+    boxesConverted: { type: Number, default: 0 },
+    // NEW: Track generated pallets/khatlis count per item
+    palletsGenerated: { type: Number, default: 0 },
+    khatlisGenerated: { type: Number, default: 0 },
     qcHistory: [qcHistorySchema],
 });
 
@@ -36,13 +118,10 @@ const purchaseOrderSchema = new mongoose.Schema({
     },
     items: [poItemSchema],
     
-    // --- ADD THIS NEW FIELD ---
-    // This will store a reference to all pallets created from this PO.
     generatedPallets: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Pallet'
     }],
-    // --------------------------
 
     status: {
         type: String,
@@ -53,7 +132,7 @@ const purchaseOrderSchema = new mongoose.Schema({
     notes: { type: String },
 }, { timestamps: true });
 
-// Pre-save hook (no changes here)
+// Pre-save hook
 purchaseOrderSchema.pre('save', function(next) {
     if (this.isModified('items') || this.isModified('packingRules')) {
         this.items.forEach(item => {
@@ -65,7 +144,7 @@ purchaseOrderSchema.pre('save', function(next) {
     next();
 });
 
-// Pre-validate hook (no changes here)
+// Pre-validate hook
 purchaseOrderSchema.pre('validate', async function(next) {
     if (this.isNew && !this.poId) {
         this.poId = await generateId('PO');

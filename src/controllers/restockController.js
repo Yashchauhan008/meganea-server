@@ -4,51 +4,6 @@ import Tile from '../models/tileModel.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import { generateId } from '../services/idGenerator.js';
 
-// @desc    Create a new restock request
-// @route   POST /api/restocks
-// export const createRestockRequest = asyncHandler(async (req, res) => {
-//   const { requestedItems, notes } = req.body;
-
-//   if (!requestedItems || requestedItems.length === 0) {
-//     res.status(400);
-//     throw new Error('Request must contain at least one tile');
-//   }
-
-//   const session = await mongoose.startSession();
-//   session.startTransaction();
-
-//   try {
-//     // For each item, increase the 'restockingStock'
-//     for (const item of requestedItems) {
-//       await Tile.findByIdAndUpdate(
-//         item.tile,
-//         { $inc: { 'stockDetails.restockingStock': item.quantityRequested } },
-//         { session }
-//       );
-//     }
-
-//     const requestId = await generateId('RQ');
-
-//     const restockRequest = new RestockRequest({
-//       requestId,
-//       requestedItems,
-//       notes,
-//       requestedBy: req.user._id,
-//     });
-
-//     const createdRequest = await restockRequest.save({ session });
-
-//     await session.commitTransaction();
-//     res.status(201).json(createdRequest);
-
-//   } catch (error) {
-//     await session.abortTransaction();
-//     res.status(400);
-//     throw new Error(error.message || 'Failed to create restock request');
-//   } finally {
-//     session.endSession();
-//   }
-// });
 
 export const createRestockRequest = asyncHandler(async (req, res) => {
   const { requestedItems, notes } = req.body;
