@@ -634,16 +634,17 @@ export const getTilesByFactory = asyncHandler(async (req, res) => {
  * @route   GET /api/tiles/:id/stock-details
  * @access  Private
  */
+/**
+ * @desc    Get detailed stock information for a tile
+ * @route   GET /api/tiles/:id/stock-details
+ * @access  Private
+ */
 export const getTileStockDetails = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  if (!mongoose.Types.ObjectId.isValid(id)) {
-    res.status(400);
-    throw new Error('Invalid Tile ID');
-  }
-
+  // Get tile with populated factories
   const tile = await Tile.findById(id)
-    .populate('manufacturingFactories', 'name')
+    .populate('manufacturingFactories', 'name address')
     .populate('createdBy', 'username');
 
   if (!tile) {
@@ -651,24 +652,20 @@ export const getTileStockDetails = asyncHandler(async (req, res) => {
     throw new Error('Tile not found');
   }
 
-  // Get factory stock (pallets/khatlis in factories for this tile)
+  // Get factory stock - pallets/khatlis in factory stock for this tile
   const factoryStockAgg = await Pallet.aggregate([
-    {
-      $match: {
-        tile: new mongoose.Types.ObjectId(id),
-        status: 'InFactoryStock'
-      }
+    { 
+      $match: { 
+        tile: new mongoose.Types.ObjectId(id), 
+        status: 'InFactoryStock' 
+      } 
     },
     {
       $group: {
         _id: '$factory',
-        totalBoxes: { $sum: '$boxCount' },
-        palletCount: {
-          $sum: { $cond: [{ $eq: ['$type', 'Pallet'] }, 1, 0] }
-        },
-        khatliCount: {
-          $sum: { $cond: [{ $eq: ['$type', 'Khatli'] }, 1, 0] }
-        }
+        pallets: { $sum: { $cond: [{ $eq: ['$type', 'Pallet'] }, 1, 0] } },
+        khatlis: { $sum: { $cond: [{ $eq: ['$type', 'Khatli'] }, 1, 0] } },
+        boxes: { $sum: '$boxCount' }
       }
     },
     {
@@ -679,87 +676,75 @@ export const getTileStockDetails = asyncHandler(async (req, res) => {
         as: 'factoryInfo'
       }
     },
-    {
-      $unwind: '$factoryInfo'
-    },
+    { $unwind: { path: '$factoryInfo', preserveNullAndEmptyArrays: true } },
     {
       $project: {
+        _id: 0,
         factoryId: '$_id',
-        factoryName: '$factoryInfo.name',
-        totalBoxes: 1,
-        palletCount: 1,
-        khatliCount: 1
+        factoryName: { $ifNull: ['$factoryInfo.name', 'Unknown'] },
+        pallets: 1,
+        khatlis: 1,
+        boxes: 1
+      }
+    },
+    { $sort: { factoryName: 1 } }
+  ]);
+
+  // Calculate total factory stock
+  const totalFactoryStock = factoryStockAgg.reduce((sum, f) => sum + f.boxes, 0);
+
+  // Get transit stock - pallets loaded in containers that are dispatched/in transit
+  const transitStockAgg = await Pallet.aggregate([
+    {
+      $match: {
+        tile: new mongoose.Types.ObjectId(id),
+        status: { $in: ['LoadedInContainer', 'Dispatched'] }
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        pallets: { $sum: { $cond: [{ $eq: ['$type', 'Pallet'] }, 1, 0] } },
+        khatlis: { $sum: { $cond: [{ $eq: ['$type', 'Khatli'] }, 1, 0] } },
+        total: { $sum: '$boxCount' }
       }
     }
   ]);
 
-  // Calculate total factory stock
-  const totalFactoryStock = factoryStockAgg.reduce((sum, f) => sum + f.totalBoxes, 0);
+  const transitStock = transitStockAgg[0] || { pallets: 0, khatlis: 0, total: 0 };
 
-  // Get transit stock (boxes in containers that are dispatched or in transit)
-  const transitContainers = await Container.find({
-    status: { $in: ['Dispatched', 'In Transit'] }
-  }).populate({
-    path: 'pallets',
-    match: { tile: new mongoose.Types.ObjectId(id) },
-    select: 'boxCount type'
-  }).populate({
-    path: 'khatlis',
-    match: { tile: new mongoose.Types.ObjectId(id) },
-    select: 'boxCount type'
-  });
-
-  let transitStock = 0;
-  let transitPallets = 0;
-  let transitKhatlis = 0;
-
-  transitContainers.forEach(container => {
-    // Count pallets
-    if (container.pallets && container.pallets.length > 0) {
-      container.pallets.forEach(pallet => {
-        if (pallet) {
-          transitStock += pallet.boxCount || 0;
-          transitPallets++;
-        }
-      });
+  // Get loaded stock (in containers but not yet dispatched)
+  const loadedStockAgg = await Pallet.aggregate([
+    {
+      $match: {
+        tile: new mongoose.Types.ObjectId(id),
+        status: 'LoadedInContainer',
+        container: { $ne: null }
+      }
+    },
+    {
+      $lookup: {
+        from: 'containers',
+        localField: 'container',
+        foreignField: '_id',
+        as: 'containerInfo'
+      }
+    },
+    { $unwind: '$containerInfo' },
+    {
+      $match: {
+        'containerInfo.status': { $nin: ['Dispatched', 'In Transit', 'Delivered'] }
+      }
+    },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: '$boxCount' }
+      }
     }
-    // Count khatlis
-    if (container.khatlis && container.khatlis.length > 0) {
-      container.khatlis.forEach(khatli => {
-        if (khatli) {
-          transitStock += khatli.boxCount || 0;
-          transitKhatlis++;
-        }
-      });
-    }
-  });
+  ]);
 
-  // Get loaded but not dispatched stock (in containers that are Loading, Loaded, or Ready to Dispatch)
-  const loadedContainers = await Container.find({
-    status: { $in: ['Loading', 'Loaded', 'Ready to Dispatch'] }
-  }).populate({
-    path: 'pallets',
-    match: { tile: new mongoose.Types.ObjectId(id) },
-    select: 'boxCount type'
-  }).populate({
-    path: 'khatlis',
-    match: { tile: new mongoose.Types.ObjectId(id) },
-    select: 'boxCount type'
-  });
-
-  let loadedStock = 0;
-  loadedContainers.forEach(container => {
-    if (container.pallets) {
-      container.pallets.forEach(pallet => {
-        if (pallet) loadedStock += pallet.boxCount || 0;
-      });
-    }
-    if (container.khatlis) {
-      container.khatlis.forEach(khatli => {
-        if (khatli) loadedStock += khatli.boxCount || 0;
-      });
-    }
-  });
+  const loadedStock = loadedStockAgg[0] || { total: 0 };
 
   res.status(200).json({
     tile,
@@ -768,12 +753,12 @@ export const getTileStockDetails = asyncHandler(async (req, res) => {
       byFactory: factoryStockAgg
     },
     transitStock: {
-      total: transitStock,
-      pallets: transitPallets,
-      khatlis: transitKhatlis
+      total: transitStock.total,
+      pallets: transitStock.pallets,
+      khatlis: transitStock.khatlis
     },
     loadedStock: {
-      total: loadedStock
+      total: loadedStock.total
     }
   });
 });
