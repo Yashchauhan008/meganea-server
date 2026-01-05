@@ -1,5 +1,3 @@
-// // backend/src/models/purchaseOrderModel.js
-
 // import mongoose from 'mongoose';
 // import { generateId } from '../services/idGenerator.js';
 
@@ -22,6 +20,11 @@
 //     khatlisOrdered: { type: Number, required: true, default: 0 },
 //     totalBoxesOrdered: { type: Number },
 //     quantityPassedQC: { type: Number, default: 0 },
+//     // NEW: Track how many boxes have been converted to pallets/khatlis
+//     boxesConverted: { type: Number, default: 0 },
+//     // NEW: Track generated pallets/khatlis count per item
+//     palletsGenerated: { type: Number, default: 0 },
+//     khatlisGenerated: { type: Number, default: 0 },
 //     qcHistory: [qcHistorySchema],
 // });
 
@@ -36,13 +39,10 @@
 //     },
 //     items: [poItemSchema],
     
-//     // --- ADD THIS NEW FIELD ---
-//     // This will store a reference to all pallets created from this PO.
 //     generatedPallets: [{
 //         type: mongoose.Schema.Types.ObjectId,
 //         ref: 'Pallet'
 //     }],
-//     // --------------------------
 
 //     status: {
 //         type: String,
@@ -53,7 +53,7 @@
 //     notes: { type: String },
 // }, { timestamps: true });
 
-// // Pre-save hook (no changes here)
+// // Pre-save hook
 // purchaseOrderSchema.pre('save', function(next) {
 //     if (this.isModified('items') || this.isModified('packingRules')) {
 //         this.items.forEach(item => {
@@ -65,7 +65,7 @@
 //     next();
 // });
 
-// // Pre-validate hook (no changes here)
+// // Pre-validate hook
 // purchaseOrderSchema.pre('validate', async function(next) {
 //     if (this.isNew && !this.poId) {
 //         this.poId = await generateId('PO');
@@ -75,7 +75,9 @@
 
 // const PurchaseOrder = mongoose.model('PurchaseOrder', purchaseOrderSchema);
 // export default PurchaseOrder;
-// FILE LOCATION: backend/src/models/purchaseOrderModel.js
+// FILE: backend/src/models/purchaseOrderModel.js
+// Only added: soft delete fields + partial generation tracking fields
+// All existing logic preserved
 
 import mongoose from 'mongoose';
 import { generateId } from '../services/idGenerator.js';
@@ -99,12 +101,12 @@ const poItemSchema = new mongoose.Schema({
     khatlisOrdered: { type: Number, required: true, default: 0 },
     totalBoxesOrdered: { type: Number },
     quantityPassedQC: { type: Number, default: 0 },
-    // NEW: Track how many boxes have been converted to pallets/khatlis
-    boxesConverted: { type: Number, default: 0 },
-    // NEW: Track generated pallets/khatlis count per item
+    qcHistory: [qcHistorySchema],
+    
+    // NEW: Tracking fields for partial pallet generation
     palletsGenerated: { type: Number, default: 0 },
     khatlisGenerated: { type: Number, default: 0 },
-    qcHistory: [qcHistorySchema],
+    boxesConverted: { type: Number, default: 0 },
 });
 
 const purchaseOrderSchema = new mongoose.Schema({
@@ -118,6 +120,7 @@ const purchaseOrderSchema = new mongoose.Schema({
     },
     items: [poItemSchema],
     
+    // Store reference to all pallets created from this PO
     generatedPallets: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Pallet'
@@ -130,9 +133,21 @@ const purchaseOrderSchema = new mongoose.Schema({
     },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     notes: { type: String },
+    
+    // NEW: Soft delete fields
+    deleted: { type: Boolean, default: false },
+    deletedAt: { type: Date },
+    deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    deletionReason: { type: String },
+    
+    // NEW: Cancellation tracking fields
+    cancelledAt: { type: Date },
+    cancelledBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    cancellationReason: { type: String },
+    
 }, { timestamps: true });
 
-// Pre-save hook
+// Pre-save hook (UNCHANGED)
 purchaseOrderSchema.pre('save', function(next) {
     if (this.isModified('items') || this.isModified('packingRules')) {
         this.items.forEach(item => {
@@ -144,7 +159,7 @@ purchaseOrderSchema.pre('save', function(next) {
     next();
 });
 
-// Pre-validate hook
+// Pre-validate hook (UNCHANGED)
 purchaseOrderSchema.pre('validate', async function(next) {
     if (this.isNew && !this.poId) {
         this.poId = await generateId('PO');
