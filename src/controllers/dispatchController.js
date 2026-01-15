@@ -3,6 +3,8 @@ import asyncHandler from '../utils/asyncHandler.js';
 import DispatchOrder from '../models/dispatchOrderModel.js';
 import Container from '../models/containerModel.js';
 import Pallet from '../models/palletModel.js';
+import Factory from '../models/factoryModel.js';
+import Tile from '../models/tileModel.js';
 import { generateId } from '../services/idGenerator.js';
 
 
@@ -602,10 +604,11 @@ export const getAllDispatchOrders = asyncHandler(async (req, res) => {
         );
       }
   
-      // Update factory stock if status changes to/from In Transit
+      // Update factory stock and tile stock if status changes to/from In Transit
       if (oldStatus === 'Ready' && newStatus === 'In Transit') {
         // Move from dispatchedStock to inTransitStock
         const factoryStockUpdates = new Map();
+        const tileStockUpdates = new Map(); // Track tile-level transit stock
   
         dispatch.containers.forEach((container) => {
           if (!container.factory) return; // Skip containers without factory
@@ -622,6 +625,16 @@ export const getAllDispatchOrders = asyncHandler(async (req, res) => {
               update.khatlis += item.quantity;
             }
             update.boxes += item.boxCount * item.quantity;
+            
+            // Aggregate boxes by tile for tile-level tracking
+            if (item.tileId) {
+              const tileId = item.tileId.toString();
+              const itemBoxes = item.boxCount * item.quantity;
+              if (!tileStockUpdates.has(tileId)) {
+                tileStockUpdates.set(tileId, 0);
+              }
+              tileStockUpdates.set(tileId, tileStockUpdates.get(tileId) + itemBoxes);
+            }
           });
         });
   
@@ -641,9 +654,24 @@ export const getAllDispatchOrders = asyncHandler(async (req, res) => {
             { session }
           );
         }
+        
+        // Update tile-level inTransitStock (move from inFactoryStock to inTransitStock)
+        for (const [tileId, boxes] of tileStockUpdates.entries()) {
+          await Tile.findByIdAndUpdate(
+            tileId,
+            {
+              $inc: {
+                'stockDetails.inFactoryStock': -boxes,
+                'stockDetails.inTransitStock': boxes,
+              },
+            },
+            { session }
+          );
+        }
       } else if (oldStatus === 'In Transit' && newStatus === 'Delivered') {
         // Move from inTransitStock to deliveredStock
         const factoryStockUpdates = new Map();
+        const tileStockUpdates = new Map(); // Track tile-level transit stock
   
         dispatch.containers.forEach((container) => {
           if (!container.factory) return; // Skip containers without factory
@@ -660,6 +688,16 @@ export const getAllDispatchOrders = asyncHandler(async (req, res) => {
               update.khatlis += item.quantity;
             }
             update.boxes += item.boxCount * item.quantity;
+            
+            // Aggregate boxes by tile for tile-level tracking
+            if (item.tileId) {
+              const tileId = item.tileId.toString();
+              const itemBoxes = item.boxCount * item.quantity;
+              if (!tileStockUpdates.has(tileId)) {
+                tileStockUpdates.set(tileId, 0);
+              }
+              tileStockUpdates.set(tileId, tileStockUpdates.get(tileId) + itemBoxes);
+            }
           });
         });
   
@@ -674,6 +712,19 @@ export const getAllDispatchOrders = asyncHandler(async (req, res) => {
                 'stock.deliveredStock.pallets': update.pallets,
                 'stock.deliveredStock.khatlis': update.khatlis,
                 'stock.deliveredStock.totalBoxes': update.boxes,
+              },
+            },
+            { session }
+          );
+        }
+        
+        // Update tile-level inTransitStock (clear transit stock since delivered)
+        for (const [tileId, boxes] of tileStockUpdates.entries()) {
+          await Tile.findByIdAndUpdate(
+            tileId,
+            {
+              $inc: {
+                'stockDetails.inTransitStock': -boxes,
               },
             },
             { session }
@@ -926,4 +977,3 @@ export const getAvailableContainersTest = asyncHandler(async (req, res) => {
       session.endSession();
     }
   });
-  

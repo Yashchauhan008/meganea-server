@@ -84,3 +84,81 @@ export const deleteIndiaTile = asyncHandler(async (req, res) => {
     await tile.save();
     res.status(200).json({ message: 'Tile archived successfully' });
 });
+
+
+/**
+ * @desc    Get all Dubai tiles with transit stock information
+ * @route   GET /api/india-tiles/with-transit-stock
+ * @access  Private/Admin/India-Staff
+ * 
+ * This endpoint calculates transit stock for DUBAI tiles by checking
+ * which tiles are currently in containers with "In Transit" status
+ */
+export const getTilesWithTransitStock = asyncHandler(async (req, res) => {
+    const { page = 1, limit = 50, search = '', size = '' } = req.query;
+    
+    // Build query
+    let query = {};
+    if (search) {
+        query.$or = [
+            { name: new RegExp(search, 'i') },
+            { number: new RegExp(search, 'i') },
+            { color: new RegExp(search, 'i') }
+        ];
+    }
+    if (size) {
+        query.size = size;
+    }
+
+    // Get DUBAI tiles (not India tiles) with pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const tiles = await Tile.find(query) // Using Tile model (Dubai tiles)
+        .populate('manufacturingFactories', 'name')
+        .populate('createdBy', 'username')
+        .sort({ name: 1 })
+        .limit(parseInt(limit))
+        .skip(skip);
+
+    const total = await Tile.countDocuments(query);
+
+    // Calculate transit stock for each tile
+    // Transit stock = tiles in containers with status "In Transit"
+    const Container = mongoose.model('Container');
+    const Pallet = mongoose.model('Pallet');
+    
+    const tilesWithTransit = await Promise.all(tiles.map(async (tile) => {
+        try {
+            // Find all pallets of this tile that are in "In Transit" containers
+            const transitContainers = await Container.find({
+                status: 'In Transit'
+            }).select('pallets');
+
+            const transitPalletIds = transitContainers.flatMap(c => c.pallets);
+            
+            const transitPallets = await Pallet.find({
+                _id: { $in: transitPalletIds },
+                tile: tile._id
+            });
+
+            const transitStock = transitPallets.reduce((sum, pallet) => sum + pallet.boxCount, 0);
+
+            return {
+                ...tile.toObject(),
+                transitStock: transitStock || 0
+            };
+        } catch (error) {
+            console.error(`Error calculating transit stock for tile ${tile._id}:`, error);
+            return {
+                ...tile.toObject(),
+                transitStock: 0
+            };
+        }
+    }));
+
+    res.status(200).json({
+        tiles: tilesWithTransit,
+        page: parseInt(page),
+        pages: Math.ceil(total / parseInt(limit)),
+        total
+    });
+});

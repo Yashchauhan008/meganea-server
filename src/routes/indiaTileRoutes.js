@@ -4,7 +4,8 @@ import {
     getAllIndiaTiles,
     getIndiaTileById,
     updateIndiaTile,
-    deleteIndiaTile
+    deleteIndiaTile,
+    getTilesWithTransitStock
 } from '../controllers/indiaTileController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
@@ -16,10 +17,14 @@ router.use(protect, authorize('admin', 'india-staff'));
 router.route('/')
     .get(getAllIndiaTiles)
     .post(createIndiaTile);
+    
+router.get('/with-transit-stock', protect, getTilesWithTransitStock);
 
 router.route('/:id')
     .get(getIndiaTileById)
     .put(updateIndiaTile)
     .delete(authorize('admin'), deleteIndiaTile);
+
+
 
 export default router;
