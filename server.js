@@ -91,34 +91,34 @@
 
 import express from 'express';
 import dotenv from 'dotenv';
-import connectDB from './config/db.js';
-import { notFound, errorHandler } from './middleware/errorMiddleware.js';
+import connectDB from './src/config/db.js';
+import { notFound, errorHandler } from './src/middleware/errorMiddleware.js';
 import morgan from 'morgan';
-import logger from './config/logger.js';
+import logger from './src/config/logger.js';
 import cors from 'cors';
 
 // Import routes
-import authRoutes from './routes/authRoutes.js';
-import userRoutes from './routes/userRoutes.js';
-import tileRoutes from './routes/tileRoutes.js';
-import companyRoutes from './routes/companyRoutes.js';
-import bookingRoutes from './routes/bookingRoutes.js';
-import dispatchRoutes from './routes/dispatchRoutes.js';
-import restockRoutes from './routes/restockRoutes.js';
-import uploadRoutes from './routes/uploadRoutes.js';
-import dashboardRoutes from './routes/dashboardRoutes.js';
-import factoryRoutes from './routes/factoryRoutes.js';
-import purchaseOrderRoutes from './routes/purchaseOrderRoutes.js';
-import indiaTileRoutes from './routes/indiaTileRoutes.js';
-import palletRoutes from './routes/palletRoutes.js';
-import loadingPlanRoutes from './routes/loadingPlanRoutes.js';
-import containerRoutes from './routes/containerRoutes.js';
-import reportRoutes from './routes/reportRoutes.js'; // <-- ADD THIS IMPORT
-import dubaiDispatchRoutes from './routes/dubaiDispatchRoutes.js';
-import reconciliationRoutes from './routes/reconciliationRoutes.js';
+import authRoutes from './src/routes/authRoutes.js';
+import userRoutes from './src/routes/userRoutes.js';
+import tileRoutes from './src/routes/tileRoutes.js';
+import companyRoutes from './src/routes/companyRoutes.js';
+import bookingRoutes from './src/routes/bookingRoutes.js';
+import dispatchRoutes from './src/routes/dispatchRoutes.js';
+import restockRoutes from './src/routes/restockRoutes.js';
+import uploadRoutes from './src/routes/uploadRoutes.js';
+import dashboardRoutes from './src/routes/dashboardRoutes.js';
+import factoryRoutes from './src/routes/factoryRoutes.js';
+import purchaseOrderRoutes from './src/routes/purchaseOrderRoutes.js';
+import indiaTileRoutes from './src/routes/indiaTileRoutes.js';
+import palletRoutes from './src/routes/palletRoutes.js';
+import loadingPlanRoutes from './src/routes/loadingPlanRoutes.js';
+import containerRoutes from './src/routes/containerRoutes.js';
+import reportRoutes from './src/routes/reportRoutes.js'; // <-- ADD THIS IMPORT
+import dubaiDispatchRoutes from './src/routes/dubaiDispatchRoutes.js';
+import reconciliationRoutes from './src/routes/reconciliationRoutes.js';
 
 
-import asyncHandler from './utils/asyncHandler.js';
+import asyncHandler from './src/utils/asyncHandler.js';
 
 dotenv.config();
 connectDB();
