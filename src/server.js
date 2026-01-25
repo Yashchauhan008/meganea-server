@@ -114,6 +114,9 @@ import palletRoutes from './routes/palletRoutes.js';
 import loadingPlanRoutes from './routes/loadingPlanRoutes.js';
 import containerRoutes from './routes/containerRoutes.js';
 import reportRoutes from './routes/reportRoutes.js'; // <-- ADD THIS IMPORT
+import dubaiDispatchRoutes from './routes/dubaiDispatchRoutes.js';
+import reconciliationRoutes from './routes/reconciliationRoutes.js';
+
 
 import asyncHandler from './utils/asyncHandler.js';
 
@@ -149,6 +152,8 @@ app.use('/api/loading-plans', loadingPlanRoutes);
 app.use('/api/containers', containerRoutes);
 app.use('/api/reports', reportRoutes); // <-- ADD THIS LINE
 app.use('/api/uploads', uploadRoutes);
+app.use('/api/dubai-dispatches', dubaiDispatchRoutes);
+app.use('/api/reconciliation', reconciliationRoutes);
 
 app.get("/", asyncHandler(async (req, res) => {
   res.send("hello from meganea")

@@ -259,9 +259,122 @@ export const recordQC = asyncHandler(async (req, res) => {
 });
 
 // ===== GENERATE PALLETS FROM PO =====
+// export const generatePalletsFromPO = asyncHandler(async (req, res) => {
+//     const { id } = req.params;
+//     const { itemId } = req.body;
+
+//     const session = await mongoose.startSession();
+//     session.startTransaction();
+
+//     try {
+//         const po = await PurchaseOrder.findById(id).session(session);
+//         if (!po) {
+//             throw new Error('Purchase Order not found.');
+//         }
+
+//         if (!['QC_Completed', 'Packing'].includes(po.status)) {
+//             throw new Error(`Cannot generate pallets. PO status is '${po.status}', but must be 'QC_Completed' or 'Packing'.`);
+//         }
+
+//         const palletsToCreate = [];
+//         const itemsToProcess = itemId 
+//             ? po.items.filter(item => item._id.toString() === itemId)
+//             : po.items;
+
+//         for (const item of itemsToProcess) {
+//             if (item.quantityPassedQC < item.totalBoxesOrdered) {
+//                 if (itemId) {
+//                     throw new Error(`Item has not passed QC. Passed: ${item.quantityPassedQC}, Required: ${item.totalBoxesOrdered}`);
+//                 }
+//                 continue;
+//             }
+
+//             const existingPallets = await Pallet.countDocuments({
+//                 sourcePurchaseOrder: po._id,
+//                 tile: item.tile,
+//                 type: 'Pallet'
+//             }).session(session);
+
+//             const existingKhatlis = await Pallet.countDocuments({
+//                 sourcePurchaseOrder: po._id,
+//                 tile: item.tile,
+//                 type: 'Khatli'
+//             }).session(session);
+
+//             const palletsRemaining = (item.palletsOrdered || 0) - existingPallets;
+//             const khatlisRemaining = (item.khatlisOrdered || 0) - existingKhatlis;
+
+//             for (let i = 0; i < palletsRemaining; i++) {
+//                 const palletId = await generateId('PA');
+//                 palletsToCreate.push({
+//                     palletId,
+//                     factory: po.factory,
+//                     tile: item.tile,
+//                     type: 'Pallet',
+//                     boxCount: po.packingRules.boxesPerPallet,
+//                     sourcePurchaseOrder: po._id,
+//                     status: 'InFactoryStock'
+//                 });
+//             }
+
+//             for (let i = 0; i < khatlisRemaining; i++) {
+//                 const palletId = await generateId('PA');
+//                 palletsToCreate.push({
+//                     palletId,
+//                     factory: po.factory,
+//                     tile: item.tile,
+//                     type: 'Khatli',
+//                     boxCount: po.packingRules.boxesPerKhatli,
+//                     sourcePurchaseOrder: po._id,
+//                     status: 'InFactoryStock'
+//                 });
+//             }
+
+//             item.palletsGenerated = (item.palletsGenerated || 0) + palletsRemaining;
+//             item.khatlisGenerated = (item.khatlisGenerated || 0) + khatlisRemaining;
+//             item.boxesConverted = (item.boxesConverted || 0) + 
+//                 (palletsRemaining * po.packingRules.boxesPerPallet) + 
+//                 (khatlisRemaining * po.packingRules.boxesPerKhatli);
+//         }
+
+//         if (palletsToCreate.length > 0) {
+//             const createdPallets = await Pallet.insertMany(palletsToCreate, { session });
+//             const palletIds = createdPallets.map(p => p._id);
+//             po.generatedPallets.push(...palletIds);
+//         }
+
+//         const allGenerated = po.items.every(item => {
+//             const palletsGenerated = item.palletsGenerated || 0;
+//             const khatlisGenerated = item.khatlisGenerated || 0;
+//             return palletsGenerated >= item.palletsOrdered && khatlisGenerated >= item.khatlisOrdered;
+//         });
+
+//         if (allGenerated) {
+//             po.status = 'Completed';
+//         } else if (po.status === 'QC_Completed') {
+//             po.status = 'Packing';
+//         }
+
+//         await po.save({ session });
+//         await session.commitTransaction();
+
+//         const finalPO = await PurchaseOrder.findById(id)
+//             .populate('factory', 'name')
+//             .populate('items.tile', 'name tileNumber size')
+//             .populate('generatedPallets');
+
+//         res.status(200).json(finalPO);
+
+//     } catch (error) {
+//         await session.abortTransaction();
+//         res.status(400);
+//         throw new Error(error.message || 'Failed to generate pallets.');
+//     } finally {
+//         session.endSession();
+//     }
+// });
 export const generatePalletsFromPO = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { itemId } = req.body;
 
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -272,39 +385,30 @@ export const generatePalletsFromPO = asyncHandler(async (req, res) => {
             throw new Error('Purchase Order not found.');
         }
 
-        if (!['QC_Completed', 'Packing'].includes(po.status)) {
-            throw new Error(`Cannot generate pallets. PO status is '${po.status}', but must be 'QC_Completed' or 'Packing'.`);
+        if (po.status !== 'QC_Completed') {
+            throw new Error(`Cannot generate pallets. PO status is '${po.status}', but must be 'QC_Completed'.`);
+        }
+
+        const allItemsQCPassed = po.items.every(item => item.quantityPassedQC >= item.totalBoxesOrdered);
+        if (!allItemsQCPassed) {
+            throw new Error('Not all items have passed QC. Please complete all QC checks.');
         }
 
         const palletsToCreate = [];
-        const itemsToProcess = itemId 
-            ? po.items.filter(item => item._id.toString() === itemId)
-            : po.items;
+        const tileStockUpdates = new Map(); // *** NEW: Track stock updates ***
 
-        for (const item of itemsToProcess) {
-            if (item.quantityPassedQC < item.totalBoxesOrdered) {
-                if (itemId) {
-                    throw new Error(`Item has not passed QC. Passed: ${item.quantityPassedQC}, Required: ${item.totalBoxesOrdered}`);
-                }
-                continue;
-            }
+        for (const item of po.items) {
+            // *** NEW: Calculate total boxes for stock update ***
+            const boxesFromPallets = item.palletsOrdered * po.packingRules.boxesPerPallet;
+            const boxesFromKhatlis = item.khatlisOrdered * po.packingRules.boxesPerKhatli;
+            const totalBoxes = boxesFromPallets + boxesFromKhatlis;
 
-            const existingPallets = await Pallet.countDocuments({
-                sourcePurchaseOrder: po._id,
-                tile: item.tile,
-                type: 'Pallet'
-            }).session(session);
+            // *** NEW: Track stock update for this tile ***
+            const tileId = item.tile.toString();
+            tileStockUpdates.set(tileId, (tileStockUpdates.get(tileId) || 0) + totalBoxes);
 
-            const existingKhatlis = await Pallet.countDocuments({
-                sourcePurchaseOrder: po._id,
-                tile: item.tile,
-                type: 'Khatli'
-            }).session(session);
-
-            const palletsRemaining = (item.palletsOrdered || 0) - existingPallets;
-            const khatlisRemaining = (item.khatlisOrdered || 0) - existingKhatlis;
-
-            for (let i = 0; i < palletsRemaining; i++) {
+            // Create pallets
+            for (let i = 0; i < item.palletsOrdered; i++) {
                 const palletId = await generateId('PA');
                 palletsToCreate.push({
                     palletId,
@@ -313,11 +417,12 @@ export const generatePalletsFromPO = asyncHandler(async (req, res) => {
                     type: 'Pallet',
                     boxCount: po.packingRules.boxesPerPallet,
                     sourcePurchaseOrder: po._id,
-                    status: 'InFactoryStock'
+                    status: 'InFactoryStock', // Explicitly set status
                 });
             }
 
-            for (let i = 0; i < khatlisRemaining; i++) {
+            // Create khatlis
+            for (let i = 0; i < item.khatlisOrdered; i++) {
                 const palletId = await generateId('PA');
                 palletsToCreate.push({
                     palletId,
@@ -326,41 +431,41 @@ export const generatePalletsFromPO = asyncHandler(async (req, res) => {
                     type: 'Khatli',
                     boxCount: po.packingRules.boxesPerKhatli,
                     sourcePurchaseOrder: po._id,
-                    status: 'InFactoryStock'
+                    status: 'InFactoryStock', // Explicitly set status
                 });
             }
-
-            item.palletsGenerated = (item.palletsGenerated || 0) + palletsRemaining;
-            item.khatlisGenerated = (item.khatlisGenerated || 0) + khatlisRemaining;
-            item.boxesConverted = (item.boxesConverted || 0) + 
-                (palletsRemaining * po.packingRules.boxesPerPallet) + 
-                (khatlisRemaining * po.packingRules.boxesPerKhatli);
         }
 
+        // Insert all pallets/khatlis
         if (palletsToCreate.length > 0) {
             const createdPallets = await Pallet.insertMany(palletsToCreate, { session });
             const palletIds = createdPallets.map(p => p._id);
             po.generatedPallets.push(...palletIds);
         }
 
-        const allGenerated = po.items.every(item => {
-            const palletsGenerated = item.palletsGenerated || 0;
-            const khatlisGenerated = item.khatlisGenerated || 0;
-            return palletsGenerated >= item.palletsOrdered && khatlisGenerated >= item.khatlisOrdered;
-        });
-
-        if (allGenerated) {
-            po.status = 'Completed';
-        } else if (po.status === 'QC_Completed') {
-            po.status = 'Packing';
+        // *** NEW: Update Tile stock ***
+        for (const [tileId, boxCount] of tileStockUpdates.entries()) {
+            await Tile.findByIdAndUpdate(
+                tileId,
+                {
+                    $inc: {
+                        'stockDetails.inFactoryStock': boxCount,
+                        'stockDetails.restockingStock': -boxCount
+                    }
+                },
+                { session }
+            );
         }
 
+        // Update PO status
+        po.status = 'Completed';
         await po.save({ session });
+
         await session.commitTransaction();
 
         const finalPO = await PurchaseOrder.findById(id)
             .populate('factory', 'name')
-            .populate('items.tile', 'name tileNumber size')
+            .populate('items.tile', 'name')
             .populate('generatedPallets');
 
         res.status(200).json(finalPO);
@@ -373,6 +478,7 @@ export const generatePalletsFromPO = asyncHandler(async (req, res) => {
         session.endSession();
     }
 });
+
 
 // ===== DELETE PURCHASE ORDER =====
 export const deletePurchaseOrder = asyncHandler(async (req, res) => {
