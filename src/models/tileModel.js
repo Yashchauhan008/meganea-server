@@ -110,7 +110,8 @@ const tileSchema = new mongoose.Schema({
     availableStock: { type: Number, default: 0, min: 0 },
     bookedStock: { type: Number, default: 0, min: 0 },
     restockingStock: { type: Number, default: 0, min: 0 },
-    inFactoryStock: { type: Number, default: 0, min: 0 }, 
+    inFactoryStock: { type: Number, default: 0, min: 0 },
+    inTransitStock: { type: Number, default: 0, min: 0 },
   },
 
   // Manufacturing factories
