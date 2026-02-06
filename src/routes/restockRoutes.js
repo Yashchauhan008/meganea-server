@@ -1,49 +1,50 @@
 import express from 'express';
 import {
-  createRestockRequest,
-  getAllRestockRequests,
-  getRestockRequestById,
-  updateRestockRequestStatus,
-  recordArrival,
-  updateShippedQuantity,
-  forceCompleteRequest,
-  editRestockRequest,
-  editArrivalHistory,
-  // --- 1. IMPORT THE NEW CONTROLLER FUNCTION ---
-  getRestockRequestForWorkbench,
+    createRestockRequest,
+    getAllRestockRequests,
+    getRestockRequestById,
+    getRestockRequestForWorkbench,
+    updateRestockRequestStatus,
+    recordArrival,
+    updateShippedQuantity,
+    updateQuantityInPO,
+    editRestockRequest,
+    forceCompleteRequest,
+    editArrivalHistory,
+    getRequestStatistics
 } from '../controllers/restockController.js';
 import { protect, authorize } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// All routes are protected and require a user to be logged in.
-router.use(protect);
+// Statistics (admin only)
+router.get('/statistics', protect, authorize('admin'), getRequestStatistics);
 
-// Dubai staff can create new requests. Admins can too.
+// Workbench route (for PO creation)
+router.get('/:id/workbench', protect, getRestockRequestForWorkbench);
+
+// Main routes
 router.route('/')
-  .post(authorize('admin', 'dubai-staff'), createRestockRequest)
-  .get(authorize('admin', 'dubai-staff', 'india-staff'), getAllRestockRequests);
+    .get(protect, getAllRestockRequests)
+    .post(protect, authorize('admin', 'india-staff', 'dubai-staff'), createRestockRequest);
 
-// --- 2. ADD THE SPECIFIC WORKBENCH ROUTE HERE ---
-// This route must come BEFORE the generic '/:id' route.
-router.get('/:id/workbench', authorize('admin', 'india-staff'), getRestockRequestForWorkbench);
-// -------------------------------------------------
-
-// All authorized staff can view a specific request.
+// Single request routes
 router.route('/:id')
-  .get(getRestockRequestById)
-  .put(authorize('admin', 'dubai-staff'), editRestockRequest);
+    .get(protect, getRestockRequestById)
+    .put(protect, authorize('admin', 'india-staff'), editRestockRequest);
 
-// India staff can update the status to 'Processing' or 'Cancelled'. Admins can too.
-router.patch('/:id/status', authorize('admin', 'india-staff'), updateRestockRequestStatus);
+// Status management
+router.patch('/:id/status', protect, authorize('admin', 'india-staff'), updateRestockRequestStatus);
 
-// Dubai staff can record physical arrivals of stock. Admins can too.
-router.post('/:id/record-arrival', authorize('admin', 'dubai-staff'), recordArrival);
+// Arrival tracking
+router.post('/:id/record-arrival', protect, authorize('admin', 'india-staff'), recordArrival);
+router.patch('/:id/edit-arrival', protect, authorize('admin', 'india-staff'), editArrivalHistory);
 
-router.patch('/:id/update-shipped', authorize('admin', 'india-staff'), updateShippedQuantity);
+// Quantity updates
+router.patch('/:id/update-shipped', protect, authorize('admin', 'india-staff'), updateShippedQuantity);
+router.patch('/:id/update-quantity-in-po', protect, authorize('admin', 'india-staff'), updateQuantityInPO);
 
-router.patch('/:id/force-complete', authorize('admin'), forceCompleteRequest);
-
-router.patch('/:id/edit-arrival', authorize('admin'), editArrivalHistory);
+// Force complete
+router.patch('/:id/force-complete', protect, authorize('admin'), forceCompleteRequest);
 
 export default router;
