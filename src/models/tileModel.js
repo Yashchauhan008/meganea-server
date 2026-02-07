@@ -1,79 +1,3 @@
-
-// import mongoose from 'mongoose';
-
-// const tileSchema = new mongoose.Schema({
-//   tileId: { 
-//     type: String, 
-//     required: true, 
-//     unique: true, 
-//     trim: true 
-//   },
-//   name: { 
-//     type: String, 
-//     required: true,
-//     unique: true 
-//   },
-//   number: { 
-//     type: String,
-//     unique: true,
-//     sparse: true,
-//   },
-//   surface: { 
-//     type: String, 
-//     required: true,
-//     enum: ['Glossy', 'Matt']
-//   },
-//   size: { type: String, required: true },
-//   imageUrl: { type: String },
-//   publicId: { type: String },
-//   conversionFactor: { type: Number, required: true, default: 1 },
-//   restockThreshold: { type: Number, default: 0, min: 0 },
-  
-//   stockDetails: {
-//     availableStock: { type: Number, default: 0, min: 0 },
-//     bookedStock: { type: Number, default: 0, min: 0 },
-//     restockingStock: { type: Number, default: 0, min: 0 },
-//     inFactoryStock: { type: Number, default: 0, min: 0 },
-//     inTransitStock: { type: Number, default: 0, min: 0 }, // Stock currently in transit
-//   },
-
-//   manufacturingFactories: [{ 
-//     type: mongoose.Schema.Types.ObjectId, 
-//     ref: 'Factory' 
-// }],
-
-//   isActive: { type: Boolean, default: true },
-//   createdBy: { 
-//     type: mongoose.Schema.Types.ObjectId, 
-//     ref: 'User', 
-//     required: true 
-//   },
-//   deleted: { type: Boolean, default: false, select: false },
-// }, { timestamps: true });
-
-// tileSchema.statics.archive = async function(id) {
-//     const doc = await this.findById(id);
-//     if (doc) {
-//         doc.deleted = true;
-//         await doc.save();
-//     }
-//     return doc;
-// };
-
-// tileSchema.pre('find', function() {
-//   this.where({ deleted: { $ne: true } });
-// });
-
-// tileSchema.pre('findOne', function() {
-//   this.where({ deleted: { $ne: true } });
-// });
-
-// const Tile = mongoose.model('Tile', tileSchema);
-// export default Tile;
-
-// FILE: backend/src/models/tileModel.js
-// COMPLETE FILE - Replace entire file
-
 import mongoose from 'mongoose';
 
 const tileSchema = new mongoose.Schema({
@@ -97,7 +21,7 @@ const tileSchema = new mongoose.Schema({
   surface: { 
     type: String, 
     required: true,
-    enum: ['Glossy', 'Matt']
+    enum: ['Glossy', 'Matt', 'CARVING', 'SINKER', 'R-10', 'R-11']
   },
   size: { type: String, required: true },
   imageUrl: { type: String },
