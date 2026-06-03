@@ -255,3 +255,4 @@ export const getSalesmanCompanies = asyncHandler(async (req, res) => {
     .sort({ companyName: 1 });
   res.status(200).json(companies || []);
 });
+

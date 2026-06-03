@@ -5,6 +5,8 @@ import Container from '../models/containerModel.js';
 import Pallet from '../models/palletModel.js';
 import Factory from '../models/factoryModel.js';
 import Tile from '../models/tileModel.js';
+import RestockRequest from '../models/restockRequestModel.js';
+import PurchaseOrder from '../models/purchaseOrderModel.js';
 import { generateId } from '../services/idGenerator.js';
 
 
@@ -551,11 +553,11 @@ export const getAllDispatchOrders = asyncHandler(async (req, res) => {
 
   export const updateDispatchStatus = asyncHandler(async (req, res) => {
     const { id } = req.params;
-    const { newStatus, notes } = req.body;
+    const { newStatus, notes, forceUpdate } = req.body;
   
     const validStatuses = ['Pending', 'Ready', 'In Transit', 'Delivered', 'Completed', 'Cancelled'];
   
-    if (!validStatuses.includes(newStatus)) {
+    if (!newStatus || !validStatuses.includes(newStatus)) {
       res.status(400);
       throw new Error(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
     }
@@ -572,29 +574,101 @@ export const getAllDispatchOrders = asyncHandler(async (req, res) => {
   
       const oldStatus = dispatch.status;
   
-      // Validate status progression
-      const statusFlow = {
-        Pending: ['Ready', 'Cancelled'],
-        Ready: ['In Transit', 'Pending'],
-        'In Transit': ['Delivered'],
-        Delivered: ['Completed'],
-        Completed: [],
-        Cancelled: ['Pending'],
-      };
+      // Only validate status progression if not forcing update
+      if (!forceUpdate) {
+        const statusFlow = {
+          Pending: ['Ready', 'Cancelled'],
+          Ready: ['In Transit', 'Pending'],
+          'In Transit': ['Delivered'],
+          Delivered: ['Completed'],
+          Completed: [],
+          Cancelled: ['Pending'],
+        };
   
-      if (!statusFlow[oldStatus].includes(newStatus)) {
-        throw new Error(`Cannot change status from '${oldStatus}' to '${newStatus}'`);
+        // Check if oldStatus exists in statusFlow and if transition is allowed
+        if (statusFlow[oldStatus] && !statusFlow[oldStatus].includes(newStatus)) {
+          throw new Error(`Cannot change status from '${oldStatus}' to '${newStatus}'. Use force update to override.`);
+        }
       }
   
       // Update dispatch status
       dispatch.addStatusChange(newStatus, req.user._id, notes || '');
       await dispatch.save({ session });
   
+      // Update restock request quantityTransit and quantityShipped when transitioning status
+      const wasTransit = oldStatus === 'In Transit';
+      const isNowTransit = newStatus === 'In Transit';
+      
+      const wasDelivered = ['Delivered', 'Completed'].includes(oldStatus);
+      const isNowDelivered = ['Delivered', 'Completed'].includes(newStatus);
+      
+      const transitDiffMultiplier = (isNowTransit ? 1 : 0) - (wasTransit ? 1 : 0);
+      const deliveredDiffMultiplier = (isNowDelivered ? 1 : 0) - (wasDelivered ? 1 : 0);
+  
+      if (transitDiffMultiplier !== 0 || deliveredDiffMultiplier !== 0) {
+        const allItemIds = dispatch.containers.flatMap((c) => c.items.map((i) => i.itemId));
+        const pallets = await Pallet.find({ _id: { $in: allItemIds } })
+          .populate({
+            path: 'sourcePurchaseOrder',
+            select: 'sourceRestockRequest',
+          })
+          .session(session);
+  
+        const restockRequestUpdates = {};
+  
+        pallets.forEach((pallet) => {
+          if (pallet.sourcePurchaseOrder && pallet.sourcePurchaseOrder.sourceRestockRequest && pallet.tile) {
+            const restockRequestId = pallet.sourcePurchaseOrder.sourceRestockRequest.toString();
+            const tileId = pallet.tile.toString();
+            const boxes = pallet.boxCount || 0;
+  
+            if (!restockRequestUpdates[restockRequestId]) {
+              restockRequestUpdates[restockRequestId] = {};
+            }
+            if (!restockRequestUpdates[restockRequestId][tileId]) {
+              restockRequestUpdates[restockRequestId][tileId] = 0;
+            }
+            restockRequestUpdates[restockRequestId][tileId] += boxes;
+          }
+        });
+  
+        for (const [restockRequestId, tileUpdates] of Object.entries(restockRequestUpdates)) {
+          const restockRequest = await RestockRequest.findById(restockRequestId).session(session);
+          if (!restockRequest) continue;
+  
+          let hasChanges = false;
+          restockRequest.requestedItems.forEach((item) => {
+            if (item.tile) {
+              const tileId = item.tile.toString();
+              if (tileUpdates[tileId]) {
+                const boxes = tileUpdates[tileId];
+                if (transitDiffMultiplier !== 0) {
+                  item.quantityTransit = Math.max(0, (item.quantityTransit || 0) + (boxes * transitDiffMultiplier));
+                  hasChanges = true;
+                }
+                if (deliveredDiffMultiplier !== 0) {
+                  item.quantityShipped = Math.max(0, (item.quantityShipped || 0) + (boxes * deliveredDiffMultiplier));
+                  hasChanges = true;
+                }
+              }
+            }
+          });
+  
+          if (hasChanges) {
+            await restockRequest.save({ session });
+          }
+        }
+      }
+  
       // Update all containers in dispatch
       for (const container of dispatch.containers) {
-        let containerStatus = newStatus;
+        let containerStatus = 'Dispatched';
         if (newStatus === 'Cancelled') {
           containerStatus = 'Loaded';
+        } else if (newStatus === 'In Transit') {
+          containerStatus = 'In Transit';
+        } else if (newStatus === 'Delivered' || newStatus === 'Completed') {
+          containerStatus = 'Delivered';
         }
   
         await Container.findByIdAndUpdate(

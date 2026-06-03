@@ -69,14 +69,14 @@ export const getIndiaDashboardData = asyncHandler(async (req, res) => {
         dispatched: 0, inTransit: 0, delivered: 0
     };
     containerPipeline.forEach(item => {
-        const key = item._id?.toLowerCase().replace(/ /g, '').replace('to', 'To');
-        if (key === 'empty') containers.empty = item.count;
-        else if (key === 'loading') containers.loading = item.count;
-        else if (key === 'loaded') containers.loaded = item.count;
-        else if (key === 'readytodispatch') containers.readyToDispatch = item.count;
-        else if (key === 'dispatched') containers.dispatched = item.count;
-        else if (key === 'intransit') containers.inTransit = item.count;
-        else if (key === 'delivered') containers.delivered = item.count;
+        const status = item._id;
+        if (status === 'Empty') containers.empty = item.count;
+        else if (status === 'Loading') containers.loading = item.count;
+        else if (status === 'Loaded') containers.loaded = item.count;
+        else if (status === 'Ready to Dispatch' || status === 'Ready') containers.readyToDispatch = item.count;
+        else if (status === 'Dispatched') containers.dispatched = item.count;
+        else if (status === 'In Transit') containers.inTransit = item.count;
+        else if (status === 'Delivered') containers.delivered = item.count;
     });
 
     // ==================== DISPATCH PIPELINE ====================
@@ -162,7 +162,7 @@ export const getIndiaDashboardData = asyncHandler(async (req, res) => {
     ]);
 
     // ==================== PRODUCTION TREND (Last 14 days) ====================
-    const productionTrend = await Pallet.aggregate([
+    const rawProductionTrend = await Pallet.aggregate([
         { $match: { createdAt: { $gte: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) }, deleted: { $ne: true } }},
         { $group: {
             _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
@@ -170,21 +170,50 @@ export const getIndiaDashboardData = asyncHandler(async (req, res) => {
             khatlis: { $sum: { $cond: [{ $eq: ['$type', 'Khatli'] }, 1, 0] } },
             boxes: { $sum: '$boxCount' }
         }},
-        { $sort: { _id: 1 } },
-        { $project: { _id: 0, date: '$_id', pallets: 1, khatlis: 1, boxes: 1 }}
+        { $sort: { _id: 1 } }
     ]);
 
+    const productionTrend = [];
+    const trendMap = new Map(rawProductionTrend.map(item => [item._id, item]));
+
+    for (let i = 13; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(now.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        const match = trendMap.get(dateStr);
+        productionTrend.push({
+            date: dateStr,
+            pallets: match ? match.pallets : 0,
+            khatlis: match ? match.khatlis : 0,
+            boxes: match ? match.boxes : 0
+        });
+    }
+
     // ==================== DISPATCH TREND (Last 14 days) ====================
-    const dispatchTrend = await DispatchOrder.aggregate([
+    const rawDispatchTrend = await DispatchOrder.aggregate([
         { $match: { createdAt: { $gte: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000) }, deleted: { $ne: true } }},
         { $group: {
             _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
             count: { $sum: 1 },
             boxes: { $sum: '$stockSummary.totalBoxes' }
         }},
-        { $sort: { _id: 1 } },
-        { $project: { _id: 0, date: '$_id', count: 1, boxes: 1 }}
+        { $sort: { _id: 1 } }
     ]);
+
+    const dispatchTrend = [];
+    const dispatchMap = new Map(rawDispatchTrend.map(item => [item._id, item]));
+
+    for (let i = 13; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(now.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        const match = dispatchMap.get(dateStr);
+        dispatchTrend.push({
+            date: dateStr,
+            count: match ? match.count : 0,
+            boxes: match ? match.boxes : 0
+        });
+    }
 
     // ==================== TOP TILES BY STOCK ====================
     const topTiles = await Pallet.aggregate([

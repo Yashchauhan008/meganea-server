@@ -1554,43 +1554,290 @@ export const bulkCreateTiles = asyncHandler(async (req, res) => {
         throw new Error('No tile data provided.');
     }
 
-    const existingTiles = await Tile.find({ deleted: { $ne: true } }).select('name number').lean();
-    const existingNames = new Set(existingTiles.map(t => t.name?.toLowerCase()));
-    const existingNumbers = new Set(existingTiles.map(t => t.number?.toLowerCase()).filter(Boolean));
+    const validationErrors = [];
+    const tilesToCreate = [];
+    const conflicts = [];
+    const warnings = [];
+    const newFactoriesCreated = [];
+    
+    // Get ACTIVE tiles
+    const existingTiles = await Tile.find({ deleted: { $ne: true } })
+        .select('name number');
+    
+    // Get SOFT-DELETED tiles
+    const softDeletedTiles = await Tile.find({ deleted: true })
+        .select('name number _id +deleted');
+    
+    // Get all factories
+    const Factory = mongoose.model('Factory');
+    const allFactories = await Factory.find({ deleted: { $ne: true } })
+        .select('name _id');
+    
+    // Create factory name map
+    const factoryMap = new Map();
+    allFactories.forEach(factory => {
+        factoryMap.set(factory.name.toLowerCase().trim(), factory._id);
+    });
+    
+    const dbNumbers = new Set(existingTiles.map(t => t.number).filter(Boolean));
+    const dbNames = new Set(existingTiles.map(t => t.name));
+    
+    // Maps for soft-deleted tiles
+    const softDeletedByName = new Map();
+    const softDeletedByNumber = new Map();
+    softDeletedTiles.forEach(tile => {
+        if (tile.name) softDeletedByName.set(tile.name, tile._id);
+        if (tile.number) softDeletedByNumber.set(tile.number, tile._id);
+    });
+    
+    const fileNumbers = new Set();
+    const fileNames = new Set();
+    
+    // Track new factories to create
+    const factoriesToCreate = new Map();
 
-    const results = { successful: [], failed: [] };
-
-    for (const tileData of tilesData) {
-        try {
-            const { name, number, surface, size, restockThreshold, conversionFactor, manufacturingFactories } = tileData;
-
-            if (!name || !surface || !size) throw new Error('Name, surface, and size are required');
-            if (!VALID_SURFACES.includes(surface)) throw new Error(`Invalid surface`);
-            if (existingNames.has(name.toLowerCase())) throw new Error(`Tile with name "${name}" already exists`);
-            if (number && existingNumbers.has(number.toLowerCase())) throw new Error(`Tile with number "${number}" already exists`);
-
-            const tileId = await generateId('TL');
-            const newTile = await Tile.create({
-                tileId, name, number: number || undefined, surface, size,
-                conversionFactor: conversionFactor || 1, restockThreshold: restockThreshold || 0,
-                stockDetails: { availableStock: 0, bookedStock: 0, restockingStock: 0 },
-                manufacturingFactories: manufacturingFactories || [],
+    // Validate each tile
+    for (let i = 0; i < tilesData.length; i++) {
+        const tile = tilesData[i];
+        const errors = [];
+        const rowConflicts = {};
+        const rowWarnings = [];
+        
+        // Validate name
+        if (!tile.name || String(tile.name).trim() === '') {
+            errors.push('Name is required.');
+        } else {
+            const tileName = String(tile.name).trim();
+            
+            if (dbNames.has(tileName) || fileNames.has(tileName)) {
+                errors.push(`Name '${tileName}' already exists in active tiles.`);
+            } else if (softDeletedByName.has(tileName)) {
+                rowConflicts.nameConflict = {
+                    field: 'name',
+                    value: tileName,
+                    deletedTileId: softDeletedByName.get(tileName)
+                };
+            }
+            fileNames.add(tileName);
+        }
+        
+        // Validate size
+        if (!tile.size || String(tile.size).trim() === '') {
+            errors.push('Size is required.');
+        }
+        
+        // Validate surface
+        if (!tile.surface || String(tile.surface).trim() === '') {
+            errors.push('Surface is required.');
+        } else {
+            let surface = String(tile.surface).trim();
+            // Normalize common variations
+            if (surface.toLowerCase() === 'matt') surface = 'Matt';
+            if (surface.toLowerCase() === 'glossy') surface = 'Glossy';
+            
+            if (!VALID_SURFACES.includes(surface)) {
+                errors.push(`Surface must be one of: ${VALID_SURFACES.join(', ')}`);
+            }
+        }
+        
+        // Validate conversionFactor
+        if (!tile.conversionFactor || isNaN(Number(tile.conversionFactor)) || Number(tile.conversionFactor) <= 0) {
+            errors.push('Conversion factor must be a positive number.');
+        }
+        
+        // Validate number if provided
+        if (tile.number && String(tile.number).trim() !== '') {
+            const tileNumber = String(tile.number).trim();
+            
+            if (dbNumbers.has(tileNumber) || fileNumbers.has(tileNumber)) {
+                errors.push(`Number '${tileNumber}' already exists in active tiles.`);
+            } else if (softDeletedByNumber.has(tileNumber)) {
+                rowConflicts.numberConflict = {
+                    field: 'number',
+                    value: tileNumber,
+                    deletedTileId: softDeletedByNumber.get(tileNumber)
+                };
+            }
+            fileNumbers.add(tileNumber);
+        }
+        
+        // Process manufacturing factories
+        let factoryIds = [];
+        if (tile.manufacturingFactories && String(tile.manufacturingFactories).trim() !== '') {
+            const factoryNamesStr = String(tile.manufacturingFactories).trim();
+            const factoryNames = factoryNamesStr.split(',').map(name => name.trim()).filter(name => name);
+            const createNew = tile.createNewFactories === true || 
+                             String(tile.createNewFactories).toLowerCase() === 'true' ||
+                             tile.createNewFactories === 'TRUE';
+            
+            for (const factoryName of factoryNames) {
+                const factoryKey = factoryName.toLowerCase().trim();
+                
+                if (factoryMap.has(factoryKey)) {
+                    factoryIds.push(factoryMap.get(factoryKey));
+                }
+                else if (factoriesToCreate.has(factoryKey)) {
+                    factoryIds.push(factoryKey);
+                }
+                else {
+                    if (createNew) {
+                        factoriesToCreate.set(factoryKey, {
+                            name: factoryName,
+                            address: 'To be updated',
+                            contactPerson: 'To be updated',
+                            contactNumber: 'To be updated',
+                            status: 'pending_details',
+                            createdBy: req.user._id
+                        });
+                        factoryIds.push(factoryKey);
+                        rowWarnings.push(`Will create new factory: "${factoryName}"`);
+                    } else {
+                        errors.push(`Factory "${factoryName}" not found. Set createNewFactories to TRUE to auto-create.`);
+                    }
+                }
+            }
+        }
+        
+        // Track conflicts
+        if (Object.keys(rowConflicts).length > 0) {
+            conflicts.push({
+                rowIndex: i,
+                tileName: tile.name,
+                conflicts: rowConflicts
+            });
+        }
+        
+        // Track warnings
+        if (rowWarnings.length > 0) {
+            warnings.push({
+                rowIndex: i,
+                tileName: tile.name,
+                warnings: rowWarnings
+            });
+        }
+        
+        // Track errors
+        if (errors.length > 0) {
+            validationErrors.push({ rowIndex: i, errors });
+        } else if (Object.keys(rowConflicts).length === 0) {
+            let surface = String(tile.surface).trim();
+            if (surface.toLowerCase() === 'matt') surface = 'Matt';
+            if (surface.toLowerCase() === 'glossy') surface = 'Glossy';
+            
+            tilesToCreate.push({
+                name: String(tile.name).trim(),
+                number: (tile.number && String(tile.number).trim() !== '') ? String(tile.number).trim() : undefined,
+                surface: surface,
+                size: String(tile.size).trim(),
+                conversionFactor: Number(tile.conversionFactor),
+                restockThreshold: Number(tile.restockThreshold) || 0,
+                imageUrl: tile.imageUrl ? String(tile.imageUrl).trim() : '',
+                stockDetails: { 
+                    availableStock: Number(tile.initialStock) || 0, 
+                    bookedStock: 0, 
+                    restockingStock: 0 
+                },
+                manufacturingFactories: factoryIds,
                 createdBy: req.user._id,
             });
-
-            existingNames.add(name.toLowerCase());
-            if (number) existingNumbers.add(number.toLowerCase());
-
-            results.successful.push({ name: newTile.name, tileId: newTile.tileId, _id: newTile._id });
-        } catch (error) {
-            results.failed.push({ name: tileData.name, error: error.message });
         }
     }
 
-    res.status(results.successful.length > 0 ? 201 : 400).json({
-        message: `${results.successful.length} tiles created, ${results.failed.length} failed`,
-        results
-    });
+    // Return validation errors
+    if (validationErrors.length > 0) {
+        return res.status(400).json({ 
+            message: 'Validation failed.', 
+            errors: validationErrors,
+            conflicts: conflicts.length > 0 ? conflicts : undefined,
+            warnings: warnings.length > 0 ? warnings : undefined
+        });
+    }
+    
+    // Return conflicts
+    if (conflicts.length > 0) {
+        return res.status(409).json({ 
+            message: 'Some tiles conflict with soft-deleted tiles.',
+            conflicts,
+            warnings: warnings.length > 0 ? warnings : undefined,
+            canProceed: false
+        });
+    }
+
+    if (tilesToCreate.length === 0) {
+        return res.status(400).json({ message: "No valid tiles to import." });
+    }
+
+    // Create tiles with transaction
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    
+    try {
+        // Step 1: Create new factories first
+        const factoryIdMap = new Map();
+        
+        if (factoriesToCreate.size > 0) {
+            const newFactories = Array.from(factoriesToCreate.values());
+            const createdFactories = await Factory.insertMany(newFactories, { session });
+            
+            let index = 0;
+            for (const [key, factoryData] of factoriesToCreate.entries()) {
+                factoryIdMap.set(key, createdFactories[index]._id);
+                newFactoriesCreated.push({
+                    name: factoryData.name,
+                    id: createdFactories[index]._id
+                });
+                index++;
+            }
+            
+            logger.info(`Created ${createdFactories.length} new factories during bulk import by ${req.user.username}`);
+        }
+        
+        // Step 2: Replace temporary factory keys with real IDs
+        for (const tile of tilesToCreate) {
+            tile.manufacturingFactories = tile.manufacturingFactories.map(idOrKey => {
+                if (typeof idOrKey === 'string' && factoryIdMap.has(idOrKey)) {
+                    return factoryIdMap.get(idOrKey);
+                }
+                return idOrKey;
+            });
+        }
+        
+        // Step 3: Generate tile IDs
+        const lastTile = await Tile.findOne().sort({ createdAt: -1 }).session(session);
+        let sequenceNumber = 1;
+        if (lastTile && lastTile.tileId) {
+            const match = lastTile.tileId.match(/TL-(\d+)/);
+            if (match) {
+                sequenceNumber = parseInt(match[1], 10) + 1;
+            }
+        }
+
+        // Assign IDs
+        for (const tile of tilesToCreate) {
+            tile.tileId = `TL-${String(sequenceNumber).padStart(5, '0')}`;
+            sequenceNumber++;
+        }
+
+        // Step 4: Insert tiles
+        await Tile.insertMany(tilesToCreate, { session });
+        await session.commitTransaction();
+        
+        logger.info(`Bulk imported ${tilesToCreate.length} tiles by ${req.user.username}`);
+        
+        res.status(201).json({
+            message: `Successfully imported ${tilesToCreate.length} tiles${newFactoriesCreated.length > 0 ? ` and created ${newFactoriesCreated.length} new factories` : ''}.`,
+            importedCount: tilesToCreate.length,
+            newFactoriesCreated: newFactoriesCreated.length > 0 ? newFactoriesCreated : undefined,
+            warnings: warnings.length > 0 ? warnings : undefined
+        });
+    } catch (error) {
+        await session.abortTransaction();
+        logger.error("Bulk import error:", error);
+        res.status(500);
+        throw new Error(`Database import failed: ${error.message}`);
+    } finally {
+        session.endSession();
+    }
 });
 
 // ===== UPDATE STOCK =====

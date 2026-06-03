@@ -68,6 +68,7 @@ router.route('/:id')
     .delete(protect, authorize('admin', 'india-staff'), deleteContainer);
 
 router.route('/:id/status')
-    .put(protect, authorize('admin', 'india-staff'), updateContainerStatus);
+    .put(protect, authorize('admin', 'india-staff'), updateContainerStatus)
+    .patch(protect, authorize('admin', 'india-staff'), updateContainerStatus);
 
 export default router;

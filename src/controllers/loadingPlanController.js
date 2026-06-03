@@ -568,6 +568,14 @@ export const createLoadingPlan = asyncHandler(async (req, res) => {
         });
 
         await loadingPlan.save({ session });
+
+        // Link containers back to this loading plan
+        await Container.updateMany(
+            { _id: { $in: createdContainers } },
+            { $set: { loadingPlan: loadingPlan._id } },
+            { session }
+        );
+
         await session.commitTransaction();
 
         // Fetch the complete loading plan with populated data

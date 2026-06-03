@@ -471,17 +471,9 @@ const calculateRequestStatus = (request) => {
  * Validate status transition
  */
 const validateStatusTransition = (currentStatus, newStatus) => {
-  const validTransitions = {
-    'Pending': ['Processing', 'Cancelled'],
-    'Processing': ['Pending', 'Partially Arrived', 'Completed', 'Cancelled'],
-    'Partially Arrived': ['Processing', 'Completed', 'Completed with Discrepancy'],
-    'Completed': [],
-    'Completed with Discrepancy': [],
-    'Cancelled': ['Pending'],
-  };
-
-  const allowed = validTransitions[currentStatus] || [];
-  return allowed.includes(newStatus);
+  if (currentStatus === newStatus) return false;
+  const allStatuses = ['Pending', 'Processing', 'Partially Arrived', 'Completed', 'Completed with Discrepancy', 'Cancelled'];
+  return allStatuses.includes(newStatus);
 };
 
 // ==================================================================================
@@ -619,30 +611,23 @@ export const updateRestockRequestStatus = asyncHandler(async (req, res) => {
     throw new Error(`Cannot change status from '${request.status}' to '${status}'`);
   }
 
-  // Handle cancellation - revert stock
-  if (status === 'Cancelled') {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-    try {
+  const activeStates = ['Pending', 'Processing', 'Partially Arrived'];
+  const finalStates = ['Completed', 'Completed with Discrepancy', 'Cancelled'];
+
+  const wasActive = activeStates.includes(request.status);
+  const isNowActive = activeStates.includes(status);
+  const wasFinal = finalStates.includes(request.status);
+  const isNowFinal = finalStates.includes(status);
+
+  const session = await mongoose.startSession();
+  session.startTransaction();
+  try {
+    // If it was active and becomes final, revert outstanding stock
+    if (wasActive && isNowFinal) {
       await revertOutstandingStock(request, session);
-      request.status = 'Cancelled';
-      request.completedAt = new Date();
-      await request.save({ session });
-      await session.commitTransaction();
-      
-      logger.info(`Restock request ${request.requestId} cancelled by ${req.user.username}`);
-    } catch (error) {
-      await session.abortTransaction();
-      throw new Error('Failed to cancel request and revert stock');
-    } finally {
-      session.endSession();
     }
-  } 
-  // Handle restoration from cancelled
-  else if (request.status === 'Cancelled' && status === 'Pending') {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-    try {
+    // If it was final and becomes active, restore outstanding stock
+    else if (wasFinal && isNowActive) {
       // Re-add restocking stock
       for (const item of request.requestedItems) {
         const outstandingQty = item.quantityRequested - item.quantityArrived;
@@ -654,28 +639,25 @@ export const updateRestockRequestStatus = asyncHandler(async (req, res) => {
           );
         }
       }
-      request.status = status;
-      request.completedAt = undefined;
-      await request.save({ session });
-      await session.commitTransaction();
-      
-      logger.info(`Restock request ${request.requestId} restored from cancelled`);
-    } catch (error) {
-      await session.abortTransaction();
-      throw new Error('Failed to restore request');
-    } finally {
-      session.endSession();
     }
-  }
-  // Regular status update
-  else {
+
     request.status = status;
-    if (status === 'Completed' || status === 'Completed with Discrepancy') {
+    if (isNowFinal) {
       request.completedAt = new Date();
+    } else {
+      request.completedAt = undefined;
     }
-    await request.save();
     
-    logger.info(`Restock request ${request.requestId} status changed to ${status}`);
+    await request.save({ session });
+    await session.commitTransaction();
+    
+    logger.info(`Restock request ${request.requestId} status changed to ${status} by ${req.user.username}`);
+  } catch (error) {
+    await session.abortTransaction();
+    res.status(400);
+    throw new Error(error.message || 'Failed to update status');
+  } finally {
+    session.endSession();
   }
 
   res.status(200).json(request);

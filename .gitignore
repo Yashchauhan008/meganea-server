@@ -3,6 +3,7 @@
 
 # Environment variables
 .env
+.env.prod
 
 # Logs
 npm-debug.log*
@@ -10,3 +11,5 @@ yarn-debug.log*
 yarn-error.log*
 
 /logs
+
+docker-build.sh

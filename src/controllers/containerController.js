@@ -251,6 +251,13 @@ const deepPopulate = [
         ]
     },
     {
+        path: 'khatlis',
+        populate: [
+            { path: 'tile', model: 'Tile', select: 'name size' },
+            { path: 'factory', model: 'Factory', select: 'name' }
+        ]
+    },
+    {
         path: 'loadingPlan',
         select: 'loadingPlanId factory',
         populate: { path: 'factory', model: 'Factory', select: 'name' }
@@ -286,11 +293,27 @@ export const createContainer = asyncHandler(async (req, res) => {
     session.startTransaction();
     try {
         const containerId = await generateId('CN');
+        
+        // Separate by type
+        const palletIds = [];
+        const khatliIds = [];
+        if (pallets && pallets.length > 0) {
+            const palletDocs = await Pallet.find({ _id: { $in: pallets } }).session(session);
+            palletDocs.forEach(p => {
+                if (p.type === 'Khatli') {
+                    khatliIds.push(p._id);
+                } else {
+                    palletIds.push(p._id);
+                }
+            });
+        }
+
         const newContainer = new Container({
             containerId,
             containerNumber,
             truckNumber,
-            pallets,
+            pallets: palletIds,
+            khatlis: khatliIds,
             factory,
             loadingPlan,
             createdBy: userId,
@@ -329,14 +352,36 @@ export const updateContainer = asyncHandler(async (req, res) => {
         const container = await Container.findById(id).session(session);
         if (!container) throw new Error('Container not found');
 
-        const originalPalletIds = container.pallets.map(p => p.toString());
+        const originalPalletIds = [
+            ...(container.pallets || []).map(p => p.toString()),
+            ...(container.khatlis || []).map(k => k.toString())
+        ];
         
         container.containerNumber = containerNumber || container.containerNumber;
         container.truckNumber = truckNumber || container.truckNumber;
-        container.pallets = newPalletIds || container.pallets;
-        container.status = (newPalletIds && newPalletIds.length > 0) ? 'Loaded' : 'Empty';
+        
+        const finalNewPalletIds = newPalletIds || [];
+        
+        // Separate newPalletIds by type
+        const palletIds = [];
+        const khatliIds = [];
+        if (newPalletIds !== undefined) {
+            if (finalNewPalletIds.length > 0) {
+                const palletDocs = await Pallet.find({ _id: { $in: finalNewPalletIds } }).session(session);
+                palletDocs.forEach(p => {
+                    if (p.type === 'Khatli') {
+                        khatliIds.push(p._id);
+                    } else {
+                        palletIds.push(p._id);
+                    }
+                });
+            }
+            container.pallets = palletIds;
+            container.khatlis = khatliIds;
+            container.status = finalNewPalletIds.length > 0 ? 'Loaded' : 'Empty';
+        }
 
-        const removedPalletIds = originalPalletIds.filter(pId => !newPalletIds?.includes(pId));
+        const removedPalletIds = originalPalletIds.filter(pId => !finalNewPalletIds.includes(pId));
         if (removedPalletIds.length > 0) {
             await Pallet.updateMany(
                 { _id: { $in: removedPalletIds } }, 
@@ -345,7 +390,7 @@ export const updateContainer = asyncHandler(async (req, res) => {
             );
         }
 
-        const addedPalletIds = newPalletIds?.filter(pId => !originalPalletIds.includes(pId)) || [];
+        const addedPalletIds = finalNewPalletIds.filter(pId => !originalPalletIds.includes(pId));
         if (addedPalletIds.length > 0) {
             await Pallet.updateMany(
                 { _id: { $in: addedPalletIds } }, 

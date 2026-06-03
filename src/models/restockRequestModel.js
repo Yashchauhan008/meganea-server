@@ -54,6 +54,7 @@ const arrivalHistorySchema = new mongoose.Schema({
 const requestedItemSchema = new mongoose.Schema({
   tile: { type: mongoose.Schema.Types.ObjectId, ref: 'Tile', required: true },
   quantityRequested: { type: Number, required: true, min: 1 },
+  quantityTransit: { type: Number, default: 0 },
   quantityShipped: { type: Number, default: 0 },
   quantityArrived: { type: Number, default: 0 },
   arrivalHistory: [arrivalHistorySchema],

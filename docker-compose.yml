@@ -1,0 +1,15 @@
+services:
+  meganea-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    pull_policy: always
+    image: yashchauhan008/meganea-server:latest
+    platform: linux/amd64
+    container_name: meganea-server
+    env_file:
+      - ./.env.prod
+    ports:
+      - "5011:5011"
+    volumes:
+      - ${PWD}/logs:/app/logs
